@@ -35,7 +35,6 @@ LicenseFile=.\license.txt
 
 [Languages]
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
-Name: "english"; MessagesFile: "compiler:Languages\English.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "Icônes supplémentaires:"
