@@ -15,6 +15,7 @@ from src.client.ui.panels.members_panel import MembersPanel
 from src.client.ui.panels.profile_panel import ProfilePanel
 from src.client.ui.panels.ranking_panel import RankingPanel
 from src.client.ui.panels.voice_panel import VoicePanel
+from src.client.ui.panels.admin_panel import AdminPanel
 from src.client.ui.widgets import StatusDot, VLKLogo, UserBadge
 
 
@@ -64,7 +65,10 @@ class MainWindow(QMainWindow):
         self.panel_members = MembersPanel(self.api)
         self.panel_profile = ProfilePanel(self.api)
         self.panel_ranking = RankingPanel(self.api)
-        for p in [self.panel_home, self.panel_chat, self.panel_members, self.panel_profile, self.panel_ranking]:
+        self.panel_admin   = AdminPanel(self.api)
+
+        for p in [self.panel_home, self.panel_chat, self.panel_members,
+                  self.panel_profile, self.panel_ranking, self.panel_admin]:
             self.stack.addWidget(p)
         content_layout.addWidget(self.stack)
 
@@ -98,21 +102,50 @@ class MainWindow(QMainWindow):
         sep.setStyleSheet(f"background:{BG_BORDER}; max-height:1px; margin:10px 0;")
         layout.addWidget(sep)
 
+        role = self.api.user.get("role", "user")
+
         nav_items = [
-            ("🏠  HOME",      0),
-            ("💬  CHAT",      1),
-            ("👥  MEMBRES",   2),
-            ("⚙️  PROFIL",    3),
+            ("🏠  HOME",       0),
+            ("💬  CHAT",       1),
+            ("👥  MEMBRES",    2),
+            ("⚙️  PROFIL",     3),
         ]
-        if self.api.user.get("role") in ("admin","superadmin"):
+        if role in ("admin", "superadmin"):
             nav_items.append(("🏆  RANKINGS", 4))
+        if role in ("admin", "superadmin"):
+            nav_items.append(("🛡  ADMIN",    5))
 
         self._nav_btns = []
         for label, idx in nav_items:
-            btn = QPushButton(label); btn.setObjectName("nav")
+            btn = QPushButton(label)
+            btn.setObjectName("nav")
+            # Style admin button differently
+            if idx == 5:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: transparent;
+                        color: {STATUS_RED};
+                        border: none;
+                        border-radius: 8px;
+                        padding: 12px 16px;
+                        font-size: 13px;
+                        font-weight: 700;
+                        text-align: left;
+                    }}
+                    QPushButton:hover {{
+                        background: {STATUS_RED}15;
+                        color: {STATUS_RED};
+                    }}
+                    QPushButton[active="true"] {{
+                        background: {STATUS_RED}20;
+                        color: {STATUS_RED};
+                        border-left: 3px solid {STATUS_RED};
+                    }}
+                """)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _, i=idx: self._nav_to(i))
-            layout.addWidget(btn); self._nav_btns.append((btn, idx))
+            layout.addWidget(btn)
+            self._nav_btns.append((btn, idx))
 
         layout.addStretch()
         sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine)
@@ -138,26 +171,28 @@ class MainWindow(QMainWindow):
         return bar
 
     # ── Nav ───────────────────────────────────────────────────────────────────
-    _TITLES = ["HOME","CLAN CHAT","MEMBRES","PROFIL","RANKINGS"]
+    _TITLES = ["HOME", "CLAN CHAT", "MEMBRES", "PROFIL", "RANKINGS", "ADMIN"]
 
     def _nav_to(self, idx: int):
         self.stack.setCurrentIndex(idx)
         self.topbar_title.setText(self._TITLES[idx] if idx < len(self._TITLES) else "")
         for btn, bidx in self._nav_btns:
-            btn.setProperty("active","true" if bidx==idx else "false")
+            btn.setProperty("active", "true" if bidx == idx else "false")
             btn.style().unpolish(btn); btn.style().polish(btn)
+        # Notify admin panel when it becomes visible
+        if idx == 5:
+            self.panel_admin.on_show()
 
     # ── WS ────────────────────────────────────────────────────────────────────
     def _connect_ws(self):
-        self.api.on("connected",   lambda d: self._set_status(True))
-        self.api.on("error",       lambda d: self._set_status(False))
-        self.api.on("presence",    self._on_presence)
-        self.api.on("online_list", self._on_online_list)
-        self.api.on("chat",        self.panel_chat.add_message)
-        self.api.on("announcement",lambda d: self.panel_home.show_announcement(d.get("data",{})))
-        self.api.on("rank_update", self._on_rank_update)
-        # Voice events forwarded to voice panel
-        for t in ("voice_join","voice_leave","voice_audio","voice_users"):
+        self.api.on("connected",    lambda d: self._set_status(True))
+        self.api.on("error",        lambda d: self._set_status(False))
+        self.api.on("presence",     self._on_presence)
+        self.api.on("online_list",  self._on_online_list)
+        self.api.on("chat",         self.panel_chat.add_message)
+        self.api.on("announcement", lambda d: self.panel_home.show_announcement(d.get("data", {})))
+        self.api.on("rank_update",  self._on_rank_update)
+        for t in ("voice_join", "voice_leave", "voice_audio", "voice_users"):
             self.api.on(t, self.voice_panel.on_ws_message)
         self.api.connect_ws()
 
@@ -173,8 +208,8 @@ class MainWindow(QMainWindow):
         self.panel_home.update_online_count(data)
 
     def _on_online_list(self, data):
-        self.panel_members.set_online_list(data.get("members",[]))
-        self.panel_home.set_online_count(len(data.get("members",[])))
+        self.panel_members.set_online_list(data.get("members", []))
+        self.panel_home.set_online_count(len(data.get("members", [])))
 
     def _on_rank_update(self, data):
         if str(data.get("user_id")) == str(self.api.user.get("id")):

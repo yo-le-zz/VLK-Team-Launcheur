@@ -13,7 +13,7 @@ GITHUB_CONFIG_URL = "https://raw.githubusercontent.com/yo-le-zz/VLK-Team-Launche
 LOCAL_FALLBACK = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config.json")
 
 _DEFAULT = {
-    "server_url": os.environ.get("VLK_SERVER_URL", "http://localhost:8000"),
+    "server_url": os.environ.get("VLK_SERVER_URL", "https://mailed-verse-harvey-corners.trycloudflare.com"),
     "clan_name": "VOLKZ CLAN",
     "clan_tag": "VLK",
     "game": "Rivals",
