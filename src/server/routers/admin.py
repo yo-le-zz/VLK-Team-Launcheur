@@ -1,9 +1,11 @@
 """VLK Launcher — Admin Router
-Auth: X-Master-Password header (matches MASTER_PASSWORD in .env)
+Auth: password query parameter or X-Master-Password header (matches MASTER_PASSWORD in .env)
 No token required — master password is the sole gate.
 """
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, Header
+import os
+from fastapi import APIRouter, Depends, HTTPException, Header, Query
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, delete
 from pydantic import BaseModel
@@ -19,9 +21,31 @@ router = APIRouter()
 
 # ── Auth dependency ───────────────────────────────────────────────────────────
 
-def check_master(x_master_password: str = Header(None)):
-    if not x_master_password or x_master_password != settings.MASTER_PASSWORD:
+def check_master(
+    password: str = Query(None),
+    x_master_password: str = Header(None)
+):
+    # Accept password from query parameter or header
+    auth_password = password or x_master_password
+    if not auth_password or auth_password != settings.MASTER_PASSWORD:
         raise HTTPException(403, "Invalid master password")
+
+
+# ── Serve Admin Panel HTML ───────────────────────────────────────────────────
+
+@router.get("/", response_class=HTMLResponse)
+async def admin_panel():
+    """Serve the admin panel HTML interface."""
+    # Get the absolute path to the static directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    static_dir = os.path.join(current_dir, "..", "static")
+    admin_html_path = os.path.join(static_dir, "admin.html")
+    
+    if os.path.exists(admin_html_path):
+        with open(admin_html_path, "r", encoding="utf-8") as f:
+            return f.read()
+    else:
+        raise HTTPException(404, "Admin panel not found")
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────

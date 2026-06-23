@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+import os
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./vlk.db"
@@ -10,8 +11,12 @@ class Settings(BaseSettings):
     LIVEKIT_URL: str = ""
     LIVEKIT_API_KEY: str = ""
     LIVEKIT_API_SECRET: str = ""
+    LIVEKIT_ROOM: str = ""
+    MUMBLE_HOST: str = ""
+    MUMBLE_PORT: str = ""
+    WEBRTC_URL: str = ""
 
     class Config:
-        env_file = ".env"
+        env_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 
 settings = Settings()

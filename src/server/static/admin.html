@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VLK Admin Panel</title>
+<style>
+  :root {
+    --bg0: #060810;
+    --bg1: #0b0f1a;
+    --bg2: #111827;
+    --bg3: #1a2233;
+    --bg4: #1e2a3a;
+    --border: #1f3050;
+    --cyan: #00d4ff;
+    --blue: #0066ff;
+    --glow: #0099dd;
+    --red: #ff3b5c;
+    --green: #00ff88;
+    --yellow: #ffb700;
+    --txt: #e8f0fe;
+    --txt2: #8ba5c8;
+    --muted: #4a6080;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg0);
+    color: var(--txt);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── LOGIN ── */
+  #login-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: radial-gradient(ellipse at 50% 0%, #0a1628 0%, var(--bg0) 70%);
+  }
+  .login-card {
+    background: var(--bg1);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 48px 40px 40px;
+    width: 380px;
+    box-shadow: 0 0 60px #0066ff18;
+  }
+  .login-logo {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .login-logo .hex {
+    display: inline-block;
+    width: 72px; height: 72px;
+    position: relative;
+    margin-bottom: 16px;
+  }
+  .login-logo svg { width: 72px; height: 72px; }
+  .login-logo h1 {
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 6px;
+    color: var(--txt);
+  }
+  .login-logo p {
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--cyan);
+    margin-top: 4px;
+  }
+  .field-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    display: block;
+  }
+  .field-group { margin-bottom: 16px; }
+  input[type="text"], input[type="password"], input[type="url"] {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--txt);
+    font-size: 14px;
+    padding: 11px 14px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  input:focus { border-color: var(--glow); }
+  .btn-primary {
+    width: 100%;
+    background: linear-gradient(90deg, var(--blue), var(--cyan));
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    padding: 13px;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: opacity .15s;
+  }
+  .btn-primary:hover { opacity: .85; }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  .login-error {
+    color: var(--red);
+    font-size: 12px;
+    text-align: center;
+    margin-top: 10px;
+    min-height: 18px;
+  }
+
+  /* ── LAYOUT ── */
+  #app { display: none; flex-direction: column; min-height: 100vh; }
+
+  /* topbar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 24px;
+    height: 52px;
+    background: var(--bg1);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .topbar-logo {
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: 4px;
+    color: var(--red);
+    flex-shrink: 0;
+  }
+  .topbar-logo span { color: var(--muted); font-weight: 400; font-size: 11px; letter-spacing: 2px; }
+  .topbar-spacer { flex: 1; }
+  .topbar-url {
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    width: 280px;
+  }
+  .tag {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--green)18;
+    color: var(--green);
+    border: 1px solid var(--green)44;
+  }
+  .btn-logout {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 12px;
+    background: var(--red)18;
+    color: var(--red);
+    border: 1px solid var(--red)44;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .btn-logout:hover { background: var(--red)30; }
+
+  /* body layout */
+  .body { display: flex; flex: 1; overflow: hidden; }
+
+  /* sidebar */
+  .sidebar {
+    width: 200px;
+    background: var(--bg1);
+    border-right: 1px solid var(--border);
+    flex-shrink: 0;
+    padding: 16px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    overflow-y: auto;
+  }
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 14px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: var(--txt2);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    transition: background .15s, color .15s;
+  }
+  .nav-btn:hover { background: var(--bg3); color: var(--txt); }
+  .nav-btn.active { background: var(--bg4); color: var(--cyan); border-left: 3px solid var(--cyan); padding-left: 11px; }
+  .sidebar-divider { height: 1px; background: var(--border); margin: 8px 0; }
+
+  /* content */
+  .content { flex: 1; overflow-y: auto; padding: 28px 32px; background: var(--bg0); }
+
+  /* ── PANELS ── */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .panel-title {
+    font-size: 20px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    color: var(--txt);
+  }
+
+  /* stat cards */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 0;
+  }
+  .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .stat-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .stat-value {
+    font-size: 32px;
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  /* toolbar */
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .search-input {
+    flex: 1;
+    min-width: 180px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--txt);
+    font-size: 13px;
+    padding: 8px 14px;
+    outline: none;
+  }
+  .search-input:focus { border-color: var(--glow); }
+  select.filter-select {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--txt2);
+    font-size: 12px;
+    padding: 8px 12px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  /* generate bar */
+  .gen-bar {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .gen-bar label { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+  .gen-bar input[type="number"] {
+    width: 70px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--txt);
+    font-size: 13px;
+    padding: 7px 10px;
+    outline: none;
+    text-align: center;
+  }
+  .gen-bar select {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--txt);
+    font-size: 12px;
+    padding: 7px 12px;
+    outline: none;
+    cursor: pointer;
+  }
+  .gen-result { font-size: 12px; color: var(--green); font-weight: 700; }
+
+  /* table */
+  .table-wrap {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead th {
+    background: var(--bg3);
+    color: var(--txt2);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 11px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody tr { border-bottom: 1px solid var(--border)88; transition: background .1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--bg3)88; }
+  tbody td { padding: 10px 14px; color: var(--txt2); vertical-align: middle; }
+  td.mono { font-family: 'Courier New', monospace; font-size: 12px; letter-spacing: .5px; }
+
+  /* badges */
+  .badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .badge-user       { background: #1a2233; color: #8ba5c8; }
+  .badge-admin      { background: #2a1f00; color: #ffb700; }
+  .badge-superadmin { background: #2a0015; color: #ff3b5c; }
+  .badge-active     { background: #00ff8818; color: #00ff88; border: 1px solid #00ff8840; }
+  .badge-inactive   { background: #ff3b5c18; color: #ff3b5c; border: 1px solid #ff3b5c40; }
+  .badge-used       { background: #ffb70018; color: #ffb700; border: 1px solid #ffb70040; }
+  .badge-free       { background: #00ff8818; color: #00ff88; border: 1px solid #00ff8840; }
+  .badge-normal     { background: #003a6e44; color: #00d4ff; }
+  .badge-important  { background: #2a1f00; color: #ffb700; }
+  .badge-urgent     { background: #2a0015; color: #ff3b5c; }
+
+  /* rank colors */
+  .rank-Recruit  { color: #8ba5c8; }
+  .rank-Member   { color: #00d4ff; }
+  .rank-Veteran  { color: #0066ff; }
+  .rank-Elite    { color: #9b59b6; }
+  .rank-Officer  { color: #ffb700; }
+  .rank-Commander{ color: #ff3b5c; }
+  .rank-Legend   { color: #ff6b00; }
+
+  /* action buttons */
+  .actions { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+  .btn-xs {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 4px 9px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--bg3);
+    color: var(--txt2);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .12s;
+  }
+  .btn-xs:hover { background: var(--bg4); }
+  .btn-xs.green { color: var(--green); border-color: #00ff8840; }
+  .btn-xs.red   { color: var(--red);   border-color: #ff3b5c40; }
+  .btn-xs.cyan  { color: var(--cyan);  border-color: #00d4ff40; }
+  .btn-xs.yellow{ color: var(--yellow);border-color: #ffb70040; }
+  .btn-xs.green:hover { background: #00ff8812; }
+  .btn-xs.red:hover   { background: #ff3b5c12; }
+  .btn-xs.cyan:hover  { background: #00d4ff12; }
+  select.role-select {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 6px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--txt2);
+    cursor: pointer;
+    outline: none;
+  }
+
+  /* announce compose */
+  .compose-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin-bottom: 24px;
+  }
+  .compose-card h3 {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .compose-card input, .compose-card textarea {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--txt);
+    font-size: 13px;
+    padding: 10px 14px;
+    outline: none;
+    margin-bottom: 10px;
+    font-family: inherit;
+    resize: vertical;
+  }
+  .compose-card input:focus, .compose-card textarea:focus { border-color: var(--glow); }
+  .compose-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .compose-row select {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--txt2);
+    font-size: 12px;
+    padding: 9px 12px;
+    outline: none;
+    cursor: pointer;
+  }
+  .compose-sep { height: 1px; background: var(--border); margin: 16px 0; }
+  .bcast-row { display: flex; gap: 10px; }
+  .bcast-row input { flex: 1; margin-bottom: 0; }
+
+  /* btn secondary */
+  .btn-sec {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg3);
+    color: var(--cyan);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s;
+  }
+  .btn-sec:hover { background: var(--bg4); }
+  .btn-sm-primary {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    padding: 8px 18px;
+    border-radius: 8px;
+    border: none;
+    background: linear-gradient(90deg, var(--blue), var(--cyan));
+    color: #fff;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity .15s;
+  }
+  .btn-sm-primary:hover { opacity: .85; }
+  .btn-bcast {
+    font-size: 11px;
+    font-weight: 800;
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: 1px solid #ffb70040;
+    background: #ffb70012;
+    color: var(--yellow);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s;
+  }
+  .btn-bcast:hover { background: #ffb70022; }
+
+  /* status bar */
+  .status-bar { font-size: 11px; color: var(--muted); margin-top: 10px; min-height: 16px; }
+  .status-bar.ok  { color: var(--green); }
+  .status-bar.err { color: var(--red); }
+
+  /* empty */
+  .empty { text-align: center; padding: 40px; color: var(--muted); font-size: 13px; }
+
+  /* toast */
+  #toast {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--green);
+    box-shadow: 0 4px 24px #00000088;
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity .2s, transform .2s;
+    pointer-events: none;
+    z-index: 9999;
+  }
+  #toast.show { opacity: 1; transform: translateY(0); }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg1); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--glow); }
+
+  @media (max-width: 900px) {
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .sidebar { width: 56px; }
+    .nav-btn span.nav-label { display: none; }
+    .content { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="36,4 68,21 68,51 36,68 4,51 4,21"
+          fill="#0b0f1a" stroke="#00d4ff" stroke-width="2.5"/>
+        <text x="36" y="44" text-anchor="middle"
+          font-family="Arial Black,sans-serif" font-weight="900"
+          font-size="22" fill="#00d4ff">VLK</text>
+      </svg>
+      <h1>VOLKZ CLAN</h1>
+      <p>ADMIN PANEL</p>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">URL du serveur</label>
+      <input type="url" id="server-url" value="" placeholder="https://...">
+    </div>
+    <div class="field-group">
+      <label class="field-label">Mot de passe master</label>
+      <input type="password" id="master-pw" placeholder="MASTER_PASSWORD">
+    </div>
+    <button class="btn-primary" id="login-btn" onclick="doLogin()">SE CONNECTER</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <!-- topbar -->
+  <div class="topbar">
+    <div class="topbar-logo">🛡 VLK ADMIN <span>PANEL</span></div>
+    <input class="topbar-url" id="display-url" readonly>
+    <div class="topbar-spacer"></div>
+    <span class="tag">🟢 CONNECTÉ</span>
+    <button class="btn-logout" onclick="doLogout()">Déconnexion</button>
+  </div>
+
+  <div class="body">
+    <!-- sidebar -->
+    <nav class="sidebar">
+      <button class="nav-btn active" data-panel="stats"  onclick="nav('stats')">📊 <span class="nav-label">Stats</span></button>
+      <button class="nav-btn"        data-panel="users"  onclick="nav('users')">👥 <span class="nav-label">Utilisateurs</span></button>
+      <button class="nav-btn"        data-panel="lics"   onclick="nav('lics')">🔑 <span class="nav-label">Licences</span></button>
+      <button class="nav-btn"        data-panel="anns"   onclick="nav('anns')">📢 <span class="nav-label">Annonces</span></button>
+      <div class="sidebar-divider"></div>
+      <button class="nav-btn" onclick="refreshCurrent()" style="color:var(--muted)">↺ <span class="nav-label">Actualiser</span></button>
+    </nav>
+
+    <!-- content -->
+    <main class="content">
+
+      <!-- STATS -->
+      <div id="panel-stats" class="panel active">
+        <div class="panel-header">
+          <div class="panel-title">📊 TABLEAU DE BORD</div>
+          <button class="btn-sec" onclick="loadStats()">↺ Actualiser</button>
+        </div>
+        <div class="stats-grid" id="stats-grid">
+          <!-- filled by JS -->
+        </div>
+        <div class="status-bar" id="stats-status"></div>
+      </div>
+
+      <!-- USERS -->
+      <div id="panel-users" class="panel">
+        <div class="panel-header">
+          <div class="panel-title">👥 UTILISATEURS</div>
+          <button class="btn-sec" onclick="loadUsers()">↺ Actualiser</button>
+        </div>
+        <div class="toolbar">
+          <input class="search-input" id="user-search" placeholder="🔍 Rechercher..." oninput="filterUsers()">
+          <select class="filter-select" id="user-role-filter" onchange="filterUsers()">
+            <option value="">Tous les rôles</option>
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+            <option value="superadmin">Superadmin</option>
+          </select>
+          <select class="filter-select" id="user-status-filter" onchange="filterUsers()">
+            <option value="">Tout statut</option>
+            <option value="active">Actifs</option>
+            <option value="banned">Bannis</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>USERNAME</th><th>ROBLOX</th><th>RÔLE</th>
+                <th>RANK</th><th>PTS</th><th>STATUT</th><th>CRÉÉ</th><th>ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody"></tbody>
+          </table>
+        </div>
+        <div class="status-bar" id="users-status"></div>
+      </div>
+
+      <!-- LICENCES -->
+      <div id="panel-lics" class="panel">
+        <div class="panel-header">
+          <div class="panel-title">🔑 LICENCES</div>
+          <button class="btn-sec" onclick="loadLicenses()">↺ Actualiser</button>
+        </div>
+
+        <!-- Generate bar -->
+        <div class="gen-bar">
+          <label>Générer</label>
+          <input type="number" id="gen-count" value="5" min="1" max="100">
+          <label>clé(s) de rôle</label>
+          <select id="gen-role">
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+            <option value="superadmin">superadmin</option>
+          </select>
+          <button class="btn-sm-primary" onclick="generateLicenses()">✚ GÉNÉRER</button>
+          <span class="gen-result" id="gen-result"></span>
+        </div>
+
+        <div class="toolbar">
+          <input class="search-input" id="lic-search" placeholder="🔍 Rechercher clé ou utilisateur..." oninput="filterLicenses()">
+          <select class="filter-select" id="lic-status-filter" onchange="filterLicenses()">
+            <option value="">Toutes</option>
+            <option value="active">Actives</option>
+            <option value="revoked">Révoquées</option>
+            <option value="free">Libres</option>
+            <option value="used">Utilisées</option>
+          </select>
+          <select class="filter-select" id="lic-role-filter" onchange="filterLicenses()">
+            <option value="">Tous rôles</option>
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+            <option value="superadmin">superadmin</option>
+          </select>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>CLÉ</th><th>RÔLE</th><th>STATUT</th>
+                <th>UTILISÉE PAR</th><th>CRÉÉE LE</th><th>ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody id="lics-tbody"></tbody>
+          </table>
+        </div>
+        <div class="status-bar" id="lics-status"></div>
+      </div>
+
+      <!-- ANNONCES -->
+      <div id="panel-anns" class="panel">
+        <div class="panel-header">
+          <div class="panel-title">📢 ANNONCES & BROADCAST</div>
+          <button class="btn-sec" onclick="loadAnnouncements()">↺ Actualiser</button>
+        </div>
+
+        <div class="compose-card">
+          <h3>Nouvelle annonce</h3>
+          <input type="text" id="ann-title" placeholder="Titre de l'annonce...">
+          <textarea id="ann-body" rows="3" placeholder="Contenu..."></textarea>
+          <div class="compose-row">
+            <select id="ann-prio">
+              <option value="normal">Normal</option>
+              <option value="important">Important</option>
+              <option value="urgent">Urgent</option>
+            </select>
+            <button class="btn-sm-primary" onclick="postAnnouncement()">📣 PUBLIER</button>
+            <span class="gen-result" id="ann-result"></span>
+          </div>
+
+          <div class="compose-sep"></div>
+
+          <h3 style="margin-bottom:10px">Message système (broadcast temps réel)</h3>
+          <div class="bcast-row">
+            <input type="text" id="bcast-msg" placeholder="Message diffusé à tous les connectés...">
+            <button class="btn-bcast" onclick="doBroadcast()">📡 DIFFUSER</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>ID</th><th>TITRE</th><th>CORPS</th><th>PRIORITÉ</th><th>STATUT</th><th>DATE</th><th>ACTION</th></tr>
+            </thead>
+            <tbody id="anns-tbody"></tbody>
+          </table>
+        </div>
+        <div class="status-bar" id="anns-status"></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════ */
+let API   = '';
+let PW    = '';
+let _users = [];
+let _lics  = [];
+let _anns  = [];
+
+const RANKS = ['Recruit','Member','Veteran','Elite','Officer','Commander','Legend'];
+const ROLES = ['user','admin','superadmin'];
+
+/* ═══════════════════════════════════════════════
+   AUTH
+═══════════════════════════════════════════════ */
+async function doLogin() {
+  const url = document.getElementById('server-url').value.trim().replace(/\/$/, '');
+  const pw  = document.getElementById('master-pw').value;
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-error');
+  if (!url || !pw) { err.textContent = 'Champs requis.'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Connexion...';
+  err.textContent = '';
+
+  try {
+    const r = await fetch(`${url}/admin/stats?password=${encodeURIComponent(pw)}`);
+    if (r.status === 403) throw new Error('Mot de passe incorrect.');
+    if (!r.ok) throw new Error(`Erreur serveur ${r.status}`);
+
+    API = url;
+    PW  = pw;
+    document.getElementById('display-url').value = url;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display          = 'flex';
+    loadAll();
+  } catch(e) {
+    err.textContent = e.message;
+    btn.disabled    = false;
+    btn.textContent = 'SE CONNECTER';
+  }
+}
+
+function doLogout() {
+  API = ''; PW = '';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').style.display          = 'none';
+  document.getElementById('master-pw').value            = '';
+}
+
+// Allow Enter key on login
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('login-screen').style.display !== 'none') doLogin();
+});
+
+// Check URL for password on load
+function checkUrlPassword() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const password = urlParams.get('password');
+  if (password) {
+    document.getElementById('master-pw').value = password;
+    // Auto-fill server URL as current origin (without /admin path)
+    document.getElementById('server-url').value = window.location.origin;
+    doLogin();
+    // Remove password from URL for security
+    const cleanUrl = window.location.origin + window.location.pathname;
+    window.history.replaceState({}, document.title, cleanUrl);
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   API HELPER
+═══════════════════════════════════════════════ */
+async function api(method, path, body) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  
+  // Add password as query parameter
+  const separator = path.includes('?') ? '&' : '?';
+  const url = API + path + separator + 'password=' + encodeURIComponent(PW);
+  
+  const r = await fetch(url, opts);
+  if (!r.ok) {
+    const txt = await r.text();
+    throw new Error(`${r.status} — ${txt}`);
+  }
+  const ct = r.headers.get('content-type') || '';
+  return ct.includes('json') ? r.json() : {};
+}
+
+/* ═══════════════════════════════════════════════
+   NAVIGATION
+═══════════════════════════════════════════════ */
+let _currentPanel = 'stats';
+
+function nav(panel) {
+  _currentPanel = panel;
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.panel === panel));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === `panel-${panel}`));
+  const loaders = { stats: loadStats, users: loadUsers, lics: loadLicenses, anns: loadAnnouncements };
+  if (loaders[panel]) loaders[panel]();
+}
+
+function refreshCurrent() { nav(_currentPanel); }
+function loadAll() { loadStats(); loadUsers(); loadLicenses(); loadAnnouncements(); }
+
+/* ═══════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════ */
+let _toastTimer;
+function toast(msg, color = 'var(--green)') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.color = color;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+/* ═══════════════════════════════════════════════
+   STATS
+═══════════════════════════════════════════════ */
+const STAT_DEFS = [
+  { key:'online_now',      label:'🟢 EN LIGNE',          color:'#00ff88' },
+  { key:'voice_now',       label:'🎙 EN VOCAL',           color:'#00d4ff' },
+  { key:'total_users',     label:'👥 UTILISATEURS',       color:'#e8f0fe' },
+  { key:'active_users',    label:'✓ COMPTES ACTIFS',      color:'#00ff88' },
+  { key:'total_licenses',  label:'📋 TOTAL LICENCES',     color:'#8ba5c8' },
+  { key:'active_licenses', label:'🔑 LICENCES ACTIVES',   color:'#0066ff' },
+  { key:'used_licenses',   label:'🔒 LICENCES UTILISÉES', color:'#ffb700' },
+  { key:'free_licenses',   label:'🔓 LICENCES LIBRES',    color:'#00ff88' },
+];
+
+async function loadStats() {
+  const grid = document.getElementById('stats-grid');
+  document.getElementById('stats-status').textContent = 'Chargement...';
+  try {
+    const d = await api('GET', '/admin/stats');
+    grid.innerHTML = STAT_DEFS.map(s => `
+      <div class="stat-card">
+        <div class="stat-label">${s.label}</div>
+        <div class="stat-value" style="color:${s.color}">${d[s.key] ?? '—'}</div>
+      </div>
+    `).join('');
+    document.getElementById('stats-status').textContent = `Mis à jour ${new Date().toLocaleTimeString()}`;
+  } catch(e) {
+    setStatus('stats-status', `Erreur : ${e.message}`, 'err');
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   USERS
+═══════════════════════════════════════════════ */
+async function loadUsers() {
+  setStatus('users-status', 'Chargement...', '');
+  try {
+    _users = await api('GET', '/admin/users');
+    filterUsers();
+    setStatus('users-status', `${_users.length} utilisateurs`, '');
+  } catch(e) { setStatus('users-status', `Erreur : ${e.message}`, 'err'); }
+}
+
+function filterUsers() {
+  const q   = document.getElementById('user-search').value.toLowerCase();
+  const rol = document.getElementById('user-role-filter').value;
+  const sta = document.getElementById('user-status-filter').value;
+  const rows = _users.filter(u => {
+    if (q   && !u.username.toLowerCase().includes(q) && !(u.roblox_username||'').toLowerCase().includes(q)) return false;
+    if (rol && u.role !== rol) return false;
+    if (sta === 'active' && !u.active) return false;
+    if (sta === 'banned' &&  u.active) return false;
+    return true;
+  });
+  renderUsers(rows);
+}
+
+function renderUsers(users) {
+  const tb = document.getElementById('users-tbody');
+  if (!users.length) { tb.innerHTML = `<tr><td colspan="9" class="empty">Aucun utilisateur</td></tr>`; return; }
+  tb.innerHTML = users.map(u => {
+    const roleClass = `badge-${u.role}`;
+    const rankClass = `rank-${u.rank||'Recruit'}`;
+    const rankIdx   = RANKS.indexOf(u.rank||'Recruit');
+    return `
+    <tr>
+      <td style="color:var(--muted)">${u.id}</td>
+      <td style="color:${u.role!=='user'?'var(--cyan)':'var(--txt)'};font-weight:700">${esc(u.username)}</td>
+      <td style="color:var(--muted)">${esc(u.roblox_username||'—')}</td>
+      <td><span class="badge ${roleClass}">${u.role}</span></td>
+      <td class="${rankClass}" style="font-weight:700">${esc(u.rank||'Recruit')}</td>
+      <td style="color:var(--yellow)">${u.rank_points||0}</td>
+      <td><span class="badge ${u.active?'badge-active':'badge-inactive'}">${u.active?'ACTIF':'BANNI'}</span></td>
+      <td style="color:var(--muted);font-size:11px">${(u.created_at||'').slice(0,10)}</td>
+      <td>
+        <div class="actions">
+          <button class="btn-xs green" onclick="promoteUser(${u.id},'${u.rank||'Recruit'}',1)" title="Monter rank">⬆</button>
+          <button class="btn-xs red"   onclick="promoteUser(${u.id},'${u.rank||'Recruit'}',-1)" title="Descendre rank">⬇</button>
+          <select class="role-select" onchange="setUserRole(${u.id},this.value)" title="Changer rôle">
+            ${ROLES.map(r => `<option value="${r}" ${r===u.role?'selected':''}>${r}</option>`).join('')}
+          </select>
+          <button class="btn-xs ${u.active?'red':'green'}" onclick="toggleUser(${u.id},${!u.active})">
+            ${u.active?'BANNIR':'DÉBANNIR'}
+          </button>
+          <button class="btn-xs red" onclick="deleteUser(${u.id},'${esc(u.username)}')" title="Supprimer">🗑</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function promoteUser(id, rank, dir) {
+  const idx  = RANKS.indexOf(rank);
+  const next = RANKS[Math.max(0, Math.min(RANKS.length-1, idx+dir))];
+  await patchUser(id, { rank: next });
+}
+async function setUserRole(id, role) { await patchUser(id, { role }); }
+async function toggleUser(id, active) { await patchUser(id, { active }); }
+async function patchUser(id, data) {
+  try {
+    await api('PATCH', `/admin/users/${id}`, data);
+    toast('✓ Utilisateur mis à jour');
+    loadUsers();
+  } catch(e) { toast(`✗ ${e.message}`, 'var(--red)'); }
+}
+async function deleteUser(id, name) {
+  if (!confirm(`Supprimer définitivement « ${name} » ?`)) return;
+  try {
+    await api('DELETE', `/admin/users/${id}`);
+    toast(`✓ ${name} supprimé`);
+    loadUsers();
+  } catch(e) { toast(`✗ ${e.message}`, 'var(--red)'); }
+}
+
+/* ═══════════════════════════════════════════════
+   LICENCES
+═══════════════════════════════════════════════ */
+async function loadLicenses() {
+  setStatus('lics-status', 'Chargement...', '');
+  try {
+    _lics = await api('GET', '/admin/licenses');
+    filterLicenses();
+    setStatus('lics-status', `${_lics.length} licences`, '');
+  } catch(e) { setStatus('lics-status', `Erreur : ${e.message}`, 'err'); }
+}
+
+function filterLicenses() {
+  const q   = document.getElementById('lic-search').value.toLowerCase();
+  const sta = document.getElementById('lic-status-filter').value;
+  const rol = document.getElementById('lic-role-filter').value;
+  const rows = _lics.filter(l => {
+    if (q && !l.key.toLowerCase().includes(q) && !(l.used_by||'').toLowerCase().includes(q)) return false;
+    if (sta === 'active'  && !l.active)     return false;
+    if (sta === 'revoked' &&  l.active)     return false;
+    if (sta === 'free'    &&  l.used_by)    return false;
+    if (sta === 'used'    && !l.used_by)    return false;
+    if (rol && l.role !== rol)              return false;
+    return true;
+  });
+  renderLicenses(rows);
+}
+
+function renderLicenses(lics) {
+  const tb = document.getElementById('lics-tbody');
+  if (!lics.length) { tb.innerHTML = `<tr><td colspan="6" class="empty">Aucune licence</td></tr>`; return; }
+  tb.innerHTML = lics.map(l => `
+    <tr>
+      <td class="mono" style="color:${l.active?'var(--cyan)':'var(--muted)'}">${esc(l.key)}</td>
+      <td><span class="badge badge-${l.role}">${l.role}</span></td>
+      <td><span class="badge ${l.active?'badge-active':'badge-inactive'}">${l.active?'ACTIVE':'RÉVOQUÉE'}</span></td>
+      <td><span class="badge ${l.used_by?'badge-used':'badge-free'}">${esc(l.used_by||'libre')}</span></td>
+      <td style="color:var(--muted);font-size:11px">${(l.created_at||'').slice(0,10)}</td>
+      <td>
+        <div class="actions">
+          <button class="btn-xs cyan" onclick="copyKey('${esc(l.key)}')">📋 COPIER</button>
+          <button class="btn-xs ${l.active?'red':'green'}" onclick="toggleLic('${esc(l.key)}',${!l.active})">
+            ${l.active?'RÉVOQUER':'RÉACTIVER'}
+          </button>
+          <button class="btn-xs red" onclick="deleteLic('${esc(l.key)}')">🗑</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function generateLicenses() {
+  const count = parseInt(document.getElementById('gen-count').value) || 1;
+  const role  = document.getElementById('gen-role').value;
+  const res   = document.getElementById('gen-result');
+  res.textContent = '...';
+  try {
+    const d = await api('POST', '/admin/licenses/generate', { count, role });
+    res.textContent = `✓ ${d.count} créée(s)`;
+    setTimeout(() => res.textContent = '', 3000);
+    toast(`✓ ${d.count} licence(s) ${role} générée(s)`);
+    loadLicenses();
+  } catch(e) { res.textContent = `✗ ${e.message}`; res.style.color = 'var(--red)'; }
+}
+
+function copyKey(key) {
+  navigator.clipboard.writeText(key).then(() => toast(`📋 ${key} copié`));
+}
+
+async function toggleLic(key, active) {
+  try {
+    await api('PATCH', `/admin/licenses/${encodeURIComponent(key)}`, { active });
+    toast(`✓ Licence ${active?'réactivée':'révoquée'}`);
+    loadLicenses();
+  } catch(e) { toast(`✗ ${e.message}`, 'var(--red)'); }
+}
+
+async function deleteLic(key) {
+  if (!confirm(`Supprimer définitivement la licence ${key} ?`)) return;
+  try {
+    await api('DELETE', `/admin/licenses/${encodeURIComponent(key)}`);
+    toast(`✓ Licence supprimée`);
+    loadLicenses();
+  } catch(e) { toast(`✗ ${e.message}`, 'var(--red)'); }
+}
+
+/* ═══════════════════════════════════════════════
+   ANNONCES
+═══════════════════════════════════════════════ */
+async function loadAnnouncements() {
+  setStatus('anns-status', 'Chargement...', '');
+  try {
+    _anns = await api('GET', '/admin/announcements');
+    renderAnnouncements(_anns);
+    setStatus('anns-status', `${_anns.length} annonces`, '');
+  } catch(e) { setStatus('anns-status', `Erreur : ${e.message}`, 'err'); }
+}
+
+function renderAnnouncements(anns) {
+  const tb = document.getElementById('anns-tbody');
+  if (!anns.length) { tb.innerHTML = `<tr><td colspan="7" class="empty">Aucune annonce</td></tr>`; return; }
+  tb.innerHTML = anns.map(a => `
+    <tr>
+      <td style="color:var(--muted)">${a.id}</td>
+      <td style="font-weight:700;color:var(--txt)">${esc(a.title)}</td>
+      <td style="color:var(--txt2);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.body)}</td>
+      <td><span class="badge badge-${a.priority}">${a.priority.toUpperCase()}</span></td>
+      <td><span class="badge ${a.active?'badge-active':'badge-inactive'}">${a.active?'ACTIVE':'ARCHIVÉE'}</span></td>
+      <td style="color:var(--muted);font-size:11px">${(a.created_at||'').slice(0,10)}</td>
+      <td><button class="btn-xs red" onclick="deleteAnn(${a.id})">🗑 SUPPR.</button></td>
+    </tr>
+  `).join('');
+}
+
+async function postAnnouncement() {
+  const title = document.getElementById('ann-title').value.trim();
+  const body  = document.getElementById('ann-body').value.trim();
+  const prio  = document.getElementById('ann-prio').value;
+  const res   = document.getElementById('ann-result');
+  if (!title || !body) { res.textContent = '⚠ Titre et contenu requis'; res.style.color='var(--red)'; return; }
+  res.textContent = '...';
+  try {
+    await api('POST', '/admin/announcements', { title, body, priority: prio });
+    document.getElementById('ann-title').value = '';
+    document.getElementById('ann-body').value  = '';
+    res.textContent = '✓ Publiée'; res.style.color = 'var(--green)';
+    setTimeout(() => res.textContent = '', 3000);
+    toast('✓ Annonce publiée et diffusée');
+    loadAnnouncements();
+  } catch(e) { res.textContent = `✗ ${e.message}`; res.style.color = 'var(--red)'; }
+}
+
+async function doBroadcast() {
+  const msg = document.getElementById('bcast-msg').value.trim();
+  if (!msg) return;
+  try {
+    await api('POST', '/admin/broadcast', { content: msg });
+    document.getElementById('bcast-msg').value = '';
+    toast('📡 Message diffusé à tous les connectés');
+  } catch(e) { toast(`✗ ${e.message}`, 'var(--red)'); }
+}
+
+async function deleteAnn(id) {
+  if (!confirm('Supprimer cette annonce ?')) return;
+  try {
+    await api('DELETE', `/admin/announcements/${id}`);
+    toast('✓ Annonce supprimée');
+    loadAnnouncements();
+  } catch(e) { toast(`✗ ${e.message}`, 'var(--red)'); }
+}
+
+/* ═══════════════════════════════════════════════
+   UTILS
+═══════════════════════════════════════════════ */
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function setStatus(id, msg, type) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg;
+  el.className = `status-bar ${type||''}`;
+}
+
+// Auto-refresh stats every 30s
+setInterval(() => { if (API && _currentPanel === 'stats') loadStats(); }, 30000);
+
+// Check URL for password on load
+checkUrlPassword();
+</script>
+</body>
+</html>
