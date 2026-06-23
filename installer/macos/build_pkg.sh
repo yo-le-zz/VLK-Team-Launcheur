@@ -227,7 +227,6 @@ EOF
 echo "[INFO] Création du package .pkg..."
 pkgbuild \
     --root "$WORK_DIR" \
-    --component-plist "Component.plist" \
     --install-location / \
     --scripts "$WORK_DIR" \
     --identifier com.volkz.vlklauncher \
@@ -246,7 +245,7 @@ productbuild \
 # Nettoyer
 echo "[INFO] Nettoyage..."
 rm -rf "$WORK_DIR"
-rm -f VLKLauncher.pkg Component.plist
+rm -f VLKLauncher.pkg
 
 echo
 echo "========================================"
