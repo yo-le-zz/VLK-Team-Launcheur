@@ -17,11 +17,20 @@ try:
 except ImportError:
     PYAUDIO_OK = False
 
-try:
-    import opuslib
-    OPUS_OK = True
-except ImportError:
-    OPUS_OK = False
+# Lazy import opuslib to avoid crash on startup if library is missing
+OPUS_OK = False
+def _get_opuslib():
+    global OPUS_OK
+    if not OPUS_OK:
+        try:
+            import opuslib
+            OPUS_OK = True
+            return opuslib
+        except ImportError:
+            return None
+    else:
+        import opuslib
+        return opuslib
 
 SAMPLE_RATE   = 48000
 CHANNELS      = 1
@@ -71,7 +80,9 @@ class VoiceEngine:
         """Start capture + playback. Returns (success, error_msg)."""
         if not PYAUDIO_OK:
             return False, "pyaudio not installed. Run: pip install pyaudio"
-        if not OPUS_OK:
+        
+        opuslib = _get_opuslib()
+        if not opuslib:
             return False, "opuslib not installed. Run: pip install opuslib"
 
         try:
