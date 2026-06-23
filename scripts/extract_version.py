@@ -25,19 +25,19 @@ def extract_version_from_commit():
         
         if match:
             version = match.group(1)
-            print(f"Version trouvée dans le commit: {version}")
+            print(f"Version trouvée dans le commit: {version}", file=sys.stderr)
             return version
         else:
-            print("Aucune version trouvée dans le message de commit")
-            print(f"Message: {commit_message}")
+            print("Aucune version trouvée dans le message de commit", file=sys.stderr)
+            print(f"Message: {commit_message}", file=sys.stderr)
             # Essayer de lire depuis pyproject.toml
             return extract_version_from_pyproject()
             
     except subprocess.CalledProcessError as e:
-        print(f"Erreur lors de la récupération du commit: {e}")
+        print(f"Erreur lors de la récupération du commit: {e}", file=sys.stderr)
         return extract_version_from_pyproject()
     except Exception as e:
-        print(f"Erreur inattendue: {e}")
+        print(f"Erreur inattendue: {e}", file=sys.stderr)
         return extract_version_from_pyproject()
 
 def extract_version_from_pyproject():
@@ -48,13 +48,13 @@ def extract_version_from_pyproject():
             match = re.search(r'version\s*=\s*"([^"]+)"', content)
             if match:
                 version = match.group(1)
-                print(f"Version trouvée dans pyproject.toml: {version}")
+                print(f"Version trouvée dans pyproject.toml: {version}", file=sys.stderr)
                 return version
     except Exception as e:
-        print(f"Erreur lors de la lecture de pyproject.toml: {e}")
-    
+        print(f"Erreur lors de la lecture de pyproject.toml: {e}", file=sys.stderr)
+
     # Version par défaut
-    print("Utilisation de la version par défaut: 1.0.0")
+    print("Utilisation de la version par défaut: 1.0.0", file=sys.stderr)
     return "1.0.0"
 
 if __name__ == "__main__":
