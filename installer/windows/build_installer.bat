@@ -11,7 +11,12 @@ REM Récupérer la version depuis le premier argument ou utiliser celle par déf
 set VERSION=%1
 if "%VERSION%"=="" set VERSION=1.0.0
 
+REM Définir le répertoire racine du projet
+set "SCRIPT_DIR=%~dp0"
+set "PROJECT_ROOT=%SCRIPT_DIR%..\.."
+
 echo [INFO] Version: %VERSION%
+echo [INFO] Répertoire racine: %PROJECT_ROOT%
 
 REM Vérifier si Python est installé
 python --version >nul 2>&1
@@ -41,28 +46,27 @@ if not exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (
 
 REM Installer les dépendances
 echo [INFO] Installation des dépendances...
-pip install -r ..\src\client\requirements.txt
+pip install -r "%PROJECT_ROOT%\src\client\requirements.txt"
 
 REM Nettoyer les builds précédents
 echo [INFO] Nettoyage des builds précédents...
-if exist "..\dist" rmdir /s /q ..\dist
-if exist "..\build" rmdir /s /q ..\build
-if exist "output" rmdir /s /q output
+if exist "%PROJECT_ROOT%\dist" rmdir /s /q "%PROJECT_ROOT%\dist"
+if exist "%PROJECT_ROOT%\build" rmdir /s /q "%PROJECT_ROOT%\build"
+if exist output rmdir /s /q output
 
 REM Construire l'exécutable avec PyInstaller
 echo [INFO] Construction de l'exécutable avec PyInstaller...
-cd ..
+pushd "%PROJECT_ROOT%"
 pyinstaller vlk_launcher.spec --distpath dist/windows --workpath build/windows --clean --noconfirm
-cd installer\windows
-
 if %errorlevel% neq 0 (
     echo [ERREUR] Échec de la construction PyInstaller
     pause
     exit /b 1
 )
+popd
 
 REM Vérifier que l'exécutable a été créé
-if not exist "..\dist\windows\VLKLauncher.exe" (
+if not exist "%PROJECT_ROOT%\dist\windows\VLKLauncher.exe" (
     echo [ERREUR] VLKLauncher.exe non trouvé après la construction
     pause
     exit /b 1
@@ -73,7 +77,7 @@ echo [INFO] Mise à jour de la version dans le fichier .iss...
 powershell -Command "(Get-Content vlk_launcher_setup.iss) -replace '#define AppVersion \".*\"', '#define AppVersion \"%VERSION%\"' | Set-Content vlk_launcher_setup.iss"
 
 REM Créer le dossier de sortie
-if not exist "output" mkdir output
+if not exist output mkdir output
 
 REM Compiler l'installateur avec Inno Setup
 echo [INFO] Compilation de l'installateur avec Inno Setup...

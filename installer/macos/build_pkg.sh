@@ -7,10 +7,15 @@ set -e
 # Récupérer la version depuis le premier argument ou utiliser celle par défaut
 VERSION=${1:-"1.0.0"}
 
+# Définir le répertoire racine du projet
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
 echo "========================================"
 echo "VLK Launcher - Construction Package macOS"
 echo "========================================"
 echo "Version: $VERSION"
+echo "Répertoire racine: $PROJECT_ROOT"
 echo
 
 # Vérifier si Python est installé
@@ -27,21 +32,21 @@ fi
 
 # Installer les dépendances
 echo "[INFO] Installation des dépendances..."
-pip3 install -r ../src/client/requirements.txt
+pip3 install -r "$PROJECT_ROOT/src/client/requirements.txt"
 
 # Nettoyer les builds précédents
 echo "[INFO] Nettoyage des builds précédents..."
-cd ..
+cd "$PROJECT_ROOT"
 rm -rf dist build
-cd installer/macos
+cd "$SCRIPT_DIR"
 
 # Construire l'application .app avec PyInstaller
 echo "[INFO] Construction de l'application .app..."
-cd ..
+cd "$PROJECT_ROOT"
 pyinstaller vlk_launcher.spec --distpath dist/macos --workpath build/macos --clean --noconfirm
-cd installer/macos
+cd "$SCRIPT_DIR"
 
-if [ ! -d "../dist/macos/VLKLauncher.app" ]; then
+if [ ! -d "$PROJECT_ROOT/dist/macos/VLKLauncher.app" ]; then
     echo "[ERREUR] Échec de la construction .app"
     exit 1
 fi
@@ -53,7 +58,7 @@ rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR/Applications"
 
 # Copier l'application dans le dossier de travail
-cp -R ../dist/macos/VLKLauncher.app "$WORK_DIR/Applications/"
+cp -R "$PROJECT_ROOT/dist/macos/VLKLauncher.app" "$WORK_DIR/Applications/"
 
 # Créer le script post-install
 cat > "$WORK_DIR/postinstall" << 'EOF'
@@ -231,6 +236,7 @@ pkgbuild \
 
 # Créer le package de distribution
 echo "[INFO] Création du package de distribution..."
+mkdir -p output
 productbuild \
     --distribution Distribution.xml \
     --package-path . \
