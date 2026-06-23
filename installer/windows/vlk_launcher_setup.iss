@@ -23,7 +23,7 @@ SolidCompression=yes
 WizardStyle=modern
 ; WizardImageFile=setup_wizard.bmp
 ; WizardSmallImageFile=setup_small.bmp
-SetupIconFile=..\src\client\assets\icon.ico
+SetupIconFile=..\..\src\client\assets\icon.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 AppCopyright=© 2024 VOLKZ Clan - Créé par yolezz
 PrivilegesRequired=admin
@@ -31,7 +31,7 @@ ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 
 ; Licences
-LicenseFile=license.txt
+LicenseFile=.\license.txt
 
 [Languages]
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
@@ -44,8 +44,8 @@ Name: "startup"; Description: "Lancer au démarrage"; GroupDescription: "Options
 
 [Files]
 ; Fichiers principaux de l'application (embarqués dans l'installateur)
-Source: "..\dist\windows\VLKLauncher.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\dist\windows\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\dist\windows\VLKLauncher.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\dist\windows\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 ; Icône Bureau
