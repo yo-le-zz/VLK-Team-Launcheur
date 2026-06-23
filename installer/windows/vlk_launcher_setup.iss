@@ -16,13 +16,13 @@ AppPublisher={#AppPublisher}
 DefaultDirName={commonpf}\VLKLauncher
 DefaultGroupName={#AppName}
 AllowNoIcons=yes
-OutputDir=installer\windows\output
+OutputDir=output
 OutputBaseFilename=VLKLauncher-Setup-{#AppVersion}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-WizardImageFile=installer\windows\setup_wizard.bmp
-WizardSmallImageFile=installer\windows\setup_small.bmp
+; WizardImageFile=setup_wizard.bmp
+; WizardSmallImageFile=setup_small.bmp
 SetupIconFile=..\src\client\assets\icon.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 AppCopyright=© 2024 VOLKZ Clan - Créé par yolezz
@@ -31,7 +31,7 @@ ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 
 ; Licences
-LicenseFile=installer\windows\license.txt
+LicenseFile=license.txt
 
 [Languages]
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
