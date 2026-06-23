@@ -1,0 +1,68 @@
+name: Build & Release VLK Launcher
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Install deps
+        run: pip install -r src/client/requirements.txt
+      - name: Build
+        run: pyinstaller vlk_launcher.spec --distpath dist/windows --workpath build/windows --noconfirm
+      - name: Zip
+        run: Compress-Archive -Path dist/windows/VLKLauncher.exe -DestinationPath dist/VLKLauncher-windows.zip
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with: {name: VLKLauncher-windows, path: dist/VLKLauncher-windows.zip}
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Install deps
+        run: pip install -r src/client/requirements.txt
+      - name: Build
+        run: pyinstaller vlk_launcher.spec --distpath dist/macos --workpath build/macos --noconfirm
+      - name: Zip
+        run: cd dist/macos && zip -r ../VLKLauncher-macos.zip "VLK Launcher.app"
+      - uses: actions/upload-artifact@v4
+        with: {name: VLKLauncher-macos, path: dist/VLKLauncher-macos.zip}
+
+  release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: echo "version=v1.0.0-$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
+      - uses: actions/download-artifact@v4
+        with: {name: VLKLauncher-windows, path: release-assets/}
+      - uses: actions/download-artifact@v4
+        with: {name: VLKLauncher-macos, path: release-assets/}
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "VLK Launcher ${{ steps.version.outputs.version }}"
+          body: |
+            ## VLK Launcher — VOLKZ Clan
+            - Config auto-chargée depuis GitHub (`config.json`)
+            - Vocal intégré (Opus + PyAudio) avec PDP, mute, indicators
+            - Chat texte temps réel
+            - Membres en ligne, rankings admin
+          files: |
+            release-assets/VLKLauncher-windows.zip
+            release-assets/VLKLauncher-macos.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

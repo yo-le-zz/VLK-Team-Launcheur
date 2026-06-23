@@ -1,0 +1,9 @@
+[project]
+name = "vlk-launcher"
+version = "1.0.0"
+description = "VOLKZ Clan — Rivals Esports Launcher"
+authors = [{name = "yolezz"}]
+requires-python = ">=3.11"
+
+[tool.pyinstaller]
+spec = "vlk_launcher.spec"
