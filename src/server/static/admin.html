@@ -566,12 +566,12 @@
     </div>
 
     <div class="field-group">
-      <label class="field-label">Nom d'utilisateur</label>
-      <input type="text" id="login-username" placeholder="Votre nom d'utilisateur admin">
+      <label class="field-label">Nom d'utilisateur admin</label>
+      <input type="text" id="login-username" placeholder="ADMIN_USERNAME">
     </div>
     <div class="field-group">
-      <label class="field-label">Mot de passe</label>
-      <input type="password" id="login-password" placeholder="Votre mot de passe">
+      <label class="field-label">Mot de passe admin</label>
+      <input type="password" id="login-password" placeholder="ADMIN_PASSWORD">
     </div>
     <div class="field-group">
       <label class="field-label">Mot de passe master</label>
@@ -776,10 +776,10 @@ async function doLogin() {
   const masterPw = document.getElementById('master-pw').value;
   const btn = document.getElementById('login-btn');
   const err = document.getElementById('login-error');
-  
-  if (!username || !password || !masterPw) { 
-    err.textContent = 'Tous les champs sont requis.'; 
-    return; 
+
+  if (!username || !password || !masterPw) {
+    err.textContent = 'Tous les champs sont requis.';
+    return;
   }
 
   btn.disabled = true;
@@ -1185,9 +1185,6 @@ function setStatus(id, msg, type) {
 
 // Auto-refresh stats every 30s
 setInterval(() => { if (API && _currentPanel === 'stats') loadStats(); }, 30000);
-
-// Check URL for password on load
-checkUrlPassword();
 </script>
 </body>
 </html>

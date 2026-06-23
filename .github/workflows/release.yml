@@ -41,12 +41,16 @@ jobs:
           .\build_installer.bat ${{ needs.extract-version.outputs.version }}
       - name: Upload installer
         uses: actions/upload-artifact@v4
-        with: {name: VLKLauncher-windows-installer, path: installer/windows/output/VLKLauncher-Setup-${{ needs.extract-version.outputs.version }}.exe}
+        with:
+          name: VLKLauncher-windows-installer
+          path: installer/windows/output/VLKLauncher-Setup-${{ needs.extract-version.outputs.version }}.exe
       - name: Upload standalone
         run: Compress-Archive -Path dist/windows/* -DestinationPath dist/VLKLauncher-windows-standalone.zip
         shell: pwsh
       - uses: actions/upload-artifact@v4
-        with: {name: VLKLauncher-windows-standalone, path: dist/VLKLauncher-windows-standalone.zip}
+        with:
+          name: VLKLauncher-windows-standalone
+          path: dist/VLKLauncher-windows-standalone.zip
 
   build-macos:
     needs: extract-version
@@ -67,11 +71,15 @@ jobs:
           ./build_pkg.sh ${{ needs.extract-version.outputs.version }}
       - name: Upload package
         uses: actions/upload-artifact@v4
-        with: {name: VLKLauncher-macos-pkg, path: installer/macos/output/VLKLauncher-${{ needs.extract-version.outputs.version }}.pkg}
+        with:
+          name: VLKLauncher-macos-pkg
+          path: installer/macos/output/VLKLauncher-${{ needs.extract-version.outputs.version }}.pkg
       - name: Upload standalone
         run: cd dist/macos && zip -r ../../VLKLauncher-macos-standalone.zip "VLKLauncher.app"
       - uses: actions/upload-artifact@v4
-        with: {name: VLKLauncher-macos-standalone, path: VLKLauncher-macos-standalone.zip}
+        with:
+          name: VLKLauncher-macos-standalone
+          path: VLKLauncher-macos-standalone.zip
 
   release:
     needs: [extract-version, build-windows, build-macos]

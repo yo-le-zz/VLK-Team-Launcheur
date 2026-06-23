@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_HOURS: int = 24
     MASTER_PASSWORD: str = "vlk_admin_master_2024"
+    ADMIN_USERNAME: str = "admin"
+    ADMIN_PASSWORD: str = "admin"
     VOICE_SERVICE: str = "livekit"  # livekit | mumble | webrtc
     LIVEKIT_URL: str = ""
     LIVEKIT_API_KEY: str = ""

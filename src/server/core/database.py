@@ -50,10 +50,25 @@ async def get_db():
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    # seed default admin license
+    # seed default admin license and user
     async with AsyncSessionLocal() as session:
         from sqlalchemy import select
+        from src.server.core.auth_utils import hash_password
+
+        # Create default admin license
         result = await session.execute(select(License).where(License.key == "VLK-ADMIN-0000"))
         if not result.scalar_one_or_none():
             session.add(License(key="VLK-ADMIN-0000", role="superadmin", active=True))
-            await session.commit()
+
+        # Create default admin user
+        result = await session.execute(select(User).where(User.username == settings.ADMIN_USERNAME))
+        if not result.scalar_one_or_none():
+            session.add(User(
+                username=settings.ADMIN_USERNAME,
+                password_hash=hash_password(settings.ADMIN_PASSWORD),
+                license_key="VLK-ADMIN-0000",
+                role="superadmin",
+                active=True
+            ))
+
+        await session.commit()
