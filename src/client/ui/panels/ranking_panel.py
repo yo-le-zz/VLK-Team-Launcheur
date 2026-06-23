@@ -15,7 +15,7 @@ class AdminWorker(QObject):
     done = Signal(object)
     error = Signal(str)
     def __init__(self, fn):
-        super().__init__()
+        super().__init__(None)  # No parent to avoid threading issues
         self._fn = fn
     def run(self):
         try:
@@ -69,14 +69,16 @@ class RankingPanel(QWidget):
     def _load_users(self):
         self.status_lbl.setText("Loading...")
         self.status_lbl.setStyleSheet(f"color: {TEXT_MUTED};")
-        self._thread = QThread()
+        self._thread = QThread(None)  # No parent to avoid threading issues
+        self._thread.setObjectName("RankingLoadThread")
         self._worker = AdminWorker(self._fetch_users)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
-        self._worker.done.connect(self._on_users)
-        self._worker.error.connect(lambda e: self.status_lbl.setText(f"Error: {e}"))
-        self._worker.done.connect(self._thread.quit)
-        self._worker.error.connect(self._thread.quit)
+        # Use QueuedConnection for thread-safe signal delivery
+        self._worker.done.connect(self._on_users, Qt.ConnectionType.QueuedConnection)
+        self._worker.error.connect(lambda e: self.status_lbl.setText(f"Error: {e}"), Qt.ConnectionType.QueuedConnection)
+        self._worker.done.connect(self._thread.quit, Qt.ConnectionType.QueuedConnection)
+        self._worker.error.connect(self._thread.quit, Qt.ConnectionType.QueuedConnection)
         self._thread.start()
 
     def _fetch_users(self):
@@ -93,7 +95,8 @@ class RankingPanel(QWidget):
         # For admin panel: prompt for master password once and cache
         if not hasattr(self, "_master_pw"):
             from PySide6.QtWidgets import QInputDialog
-            pw, ok = QInputDialog.getText(self, "Admin Auth", "Master Password:", QLineEdit.Password if False else 0)
+            from PySide6.QtWidgets import QLineEdit
+            pw, ok = QInputDialog.getText(self, "Admin Auth", "Master Password:", QLineEdit.EchoMode.Password, "")
             self._master_pw = pw if ok else ""
         return self._master_pw
 

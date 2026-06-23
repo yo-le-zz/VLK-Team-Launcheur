@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QGridLayout, QTextEdit, QDialog,
     QDialogButtonBox, QSpinBox, QSizePolicy, QAbstractItemView,
 )
-from PySide6.QtCore import Qt, QThread, QObject, Signal, QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont
 
 from src.client.ui.theme import *
@@ -21,47 +21,17 @@ RANKS = ["Recruit", "Member", "Veteran", "Elite", "Officer", "Commander", "Legen
 ROLES = ["user", "admin", "superadmin"]
 
 
-# ── Worker ────────────────────────────────────────────────────────────────────
-
-class Worker(QObject):
-    done  = Signal(object)
-    error = Signal(str)
-
-    def __init__(self, fn):
-        super().__init__()
-        self._fn = fn
-
-    def run(self):
-        try:
-            self.done.emit(self._fn())
-        except Exception as e:
-            self.error.emit(str(e))
-
-
 def _run(panel, fn, on_done, on_error=None):
-    """Run fn in a thread, call on_done(result) or on_error(str) on finish."""
-    t = QThread()
-    w = Worker(fn)
-    w.moveToThread(t)
-    t.started.connect(w.run)
-    w.done.connect(on_done)
-    w.done.connect(t.quit)
-    if on_error:
-        w.error.connect(on_error)
-    w.error.connect(t.quit)
-    # Keep references
-    panel._threads.append(t)
-    panel._workers.append(w)
-    t.finished.connect(lambda: _cleanup(panel, t, w))
-    t.start()
-
-
-def _cleanup(panel, t, w):
+    """Run fn synchronously (no threading) to avoid Qt threading issues."""
     try:
-        panel._threads.remove(t)
-        panel._workers.remove(w)
-    except ValueError:
-        pass
+        result = fn()
+        on_done(result)
+    except Exception as e:
+        if on_error:
+            on_error(str(e))
+
+
+
 
 
 # ── Auth dialog ───────────────────────────────────────────────────────────────
@@ -227,8 +197,7 @@ class StatsTab(QWidget):
     def __init__(self, api_fn, parent=None):
         super().__init__(parent)
         self._api = api_fn
-        self._threads = []
-        self._workers = []
+        self._timer = None
         self._build()
 
     def _build(self):
@@ -266,12 +235,22 @@ class StatsTab(QWidget):
             grid.addWidget(self._cards[k], i // 4, i % 4)
         layout.addLayout(grid)
 
-        # Auto-refresh every 30s
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self.load)
-        self._timer.start(30_000)
+        # Disabled auto-refresh timer to prevent threading issues
+        self._timer = None
 
         layout.addStretch()
+    
+    def stop_timer(self):
+        """No-op since timer is disabled."""
+        pass
+    
+    def start_timer(self):
+        """No-op since timer is disabled."""
+        pass
+    
+    def closeEvent(self, event):
+        """No-op since timer is disabled."""
+        super().closeEvent(event)
 
     def load(self):
         self._refresh_btn.setEnabled(False)
@@ -301,8 +280,6 @@ class UsersTab(QWidget):
     def __init__(self, api_fn, parent=None):
         super().__init__(parent)
         self._api = api_fn
-        self._threads = []
-        self._workers = []
         self._users = []
         self._build()
 
@@ -506,8 +483,6 @@ class LicensesTab(QWidget):
     def __init__(self, api_fn, parent=None):
         super().__init__(parent)
         self._api = api_fn
-        self._threads = []
-        self._workers = []
         self._lics  = []
         self._build()
 
@@ -763,8 +738,6 @@ class AnnouncementsTab(QWidget):
     def __init__(self, api_fn, parent=None):
         super().__init__(parent)
         self._api = api_fn
-        self._threads = []
-        self._workers = []
         self._build()
 
     def _build(self):
@@ -966,8 +939,6 @@ class AdminPanel(QWidget):
         self.api         = api
         self._master_pw  = ""
         self._authed     = False
-        self._threads    = []
-        self._workers    = []
         self._build_ui()
 
     # ── API helper ────────────────────────────────────────────────────────────
@@ -1134,3 +1105,8 @@ class AdminPanel(QWidget):
     def on_show(self):
         if self._authed:
             self._load_all()
+            self._tab_stats.start_timer()  # Start timer when tab is shown
+    
+    def on_hide(self):
+        """Called when tab is hidden."""
+        self._tab_stats.stop_timer()  # Stop timer when tab is hidden

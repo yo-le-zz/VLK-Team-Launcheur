@@ -47,13 +47,11 @@ def main():
     splash = make_splash(app)
     app.processEvents()
 
-    # Load remote config in background, block max 5s
-    cfg_done = threading.Event()
-    def _load():
+    # Load remote config synchronously to avoid threading issues
+    try:
         config_loader.load_config(timeout=5.0)
-        cfg_done.set()
-    threading.Thread(target=_load, daemon=True).start()
-    cfg_done.wait(timeout=6.0)
+    except Exception as e:
+        print(f"Config load error: {e}")
 
     server_url = config_loader.get_server_url()
     clan_name  = config_loader.get_clan_name()
@@ -93,8 +91,8 @@ def main():
         main_window = MainWindow(api, clan_name=clan_name)
         main_window.show()
         
-        # Start update check after short delay
-        QTimer.singleShot(2000, check_updates)
+        # Start update check after short delay - use timer for thread safety
+        QTimer.singleShot(2000, lambda: check_updates())
         
         login_window._main = main_window
 

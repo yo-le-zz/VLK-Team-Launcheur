@@ -19,7 +19,8 @@ class DownloadThread(QThread):
     error = Signal(str)
     
     def __init__(self, updater, platform: str, release_info: dict):
-        super().__init__()
+        super().__init__(None)  # No parent to avoid threading issues
+        self.setObjectName("DownloadThread")
         self.updater = updater
         self.platform = platform
         self.release_info = release_info
@@ -229,9 +230,10 @@ class UpdateDialog(QDialog):
         # Start download thread
         updater = get_updater()
         self.download_thread = DownloadThread(updater, platform_key, self.release_info)
-        self.download_thread.progress.connect(self._on_progress)
-        self.download_thread.finished.connect(self._on_download_complete)
-        self.download_thread.error.connect(self._on_download_error)
+        # Use QueuedConnection for thread-safe signal delivery
+        self.download_thread.progress.connect(self._on_progress, Qt.ConnectionType.QueuedConnection)
+        self.download_thread.finished.connect(self._on_download_complete, Qt.ConnectionType.QueuedConnection)
+        self.download_thread.error.connect(self._on_download_error, Qt.ConnectionType.QueuedConnection)
         self.download_thread.start()
     
     def _on_progress(self, percent: int):

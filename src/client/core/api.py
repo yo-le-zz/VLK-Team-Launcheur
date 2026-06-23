@@ -3,7 +3,58 @@ import json
 import asyncio
 import threading
 import requests
+import os
+import queue
 from typing import Callable, Optional
+
+
+class WSSignalDispatcher:
+    """Dispatches WebSocket callbacks using a thread-safe queue."""
+    
+    def __init__(self, parent=None):
+        self._callbacks = {}
+        self._queue = queue.Queue()
+        self._timer_callback = None
+        self._main_thread_id = threading.get_ident()
+    
+    def register_callback(self, event_type: str, callback: Callable):
+        if event_type not in self._callbacks:
+            self._callbacks[event_type] = []
+        self._callbacks[event_type].append(callback)
+    
+    def set_timer_callback(self, callback):
+        """Set a QTimer.singleShot callback for thread safety."""
+        self._timer_callback = callback
+    
+    def dispatch(self, event_type: str, data: dict):
+        """Called from background thread, queues the event for main thread processing."""
+        self._queue.put((event_type, data))
+        # Schedule processing in main thread
+        if self._timer_callback:
+            self._timer_callback(self._process_queue)
+    
+    def _process_queue(self):
+        """Process queued events in main thread."""
+        try:
+            while True:
+                event_type, data = self._queue.get_nowait()
+                self._handle_message(event_type, data)
+        except queue.Empty:
+            pass
+    
+    def _handle_message(self, event_type: str, data: dict):
+        """Called in main thread."""
+        for cb in self._callbacks.get(event_type, []):
+            try:
+                cb(data)
+            except Exception as e:
+                print(f"Error in callback for {event_type}: {e}")
+        for cb in self._callbacks.get("*", []):
+            try:
+                cb(data)
+            except Exception as e:
+                print(f"Error in wildcard callback: {e}")
+
 
 class VLKApiClient:
     def __init__(self, base_url: str = "http://localhost:8000"):
@@ -14,6 +65,76 @@ class VLKApiClient:
         self._ws_thread: Optional[threading.Thread] = None
         self._ws_callbacks: dict[str, list[Callable]] = {}
         self._running = False
+        self._cache_file = os.path.join(os.path.expanduser("~"), ".vlk_cache.json")
+        self._encryption_key: Optional[str] = None  # Derived from user password
+        self._main_thread_id = threading.get_ident()
+        self._ws_dispatcher: Optional[WSSignalDispatcher] = None
+        self._load_cached_session()
+
+    def _load_cached_session(self):
+        """Load cached token and user data from file."""
+        try:
+            if os.path.exists(self._cache_file):
+                with open(self._cache_file, 'r') as f:
+                    data = json.load(f)
+                    # Store encrypted data if present
+                    if data.get("encrypted"):
+                        self._encryption_key = data.get("encryption_key")
+                        # Data will be decrypted when password is provided
+                        self.token = None  # Will decrypt on successful login
+                        self.user = None
+                    else:
+                        # Legacy unencrypted format
+                        self.token = data.get("token")
+                        self.user = data.get("user")
+        except Exception:
+            pass
+
+    def _save_cached_session(self, password: Optional[str] = None):
+        """Save token and user data to file with optional encryption."""
+        try:
+            if self.token and self.user:
+                if password:
+                    # Use password-based encryption
+                    from src.client.core.crypto import CryptoManager
+                    crypto = CryptoManager(password)
+                    data = {
+                        "encrypted": True,
+                        "encryption_key": crypto.get_salt(),
+                        "token": crypto.encrypt(self.token),
+                        "user": crypto.encrypt(json.dumps(self.user))
+                    }
+                else:
+                    # Unencrypted (not recommended)
+                    data = {"token": self.token, "user": self.user}
+                with open(self._cache_file, 'w') as f:
+                    json.dump(data, f)
+        except Exception:
+            pass
+
+    def _decrypt_cached_session(self, password: str) -> bool:
+        """Decrypt cached session using provided password."""
+        try:
+            if not self._encryption_key:
+                return False
+            from src.client.core.crypto import CryptoManager
+            crypto = CryptoManager.from_password_and_salt(password, self._encryption_key)
+            with open(self._cache_file, 'r') as f:
+                data = json.load(f)
+            self.token = crypto.decrypt(data.get("token", ""))
+            user_json = crypto.decrypt(data.get("user", ""))
+            self.user = json.loads(user_json) if user_json else None
+            return bool(self.token and self.user)
+        except Exception:
+            return False
+
+    def _clear_cached_session(self):
+        """Clear cached session data."""
+        try:
+            if os.path.exists(self._cache_file):
+                os.remove(self._cache_file)
+        except Exception:
+            pass
 
     def _headers(self) -> dict:
         h = {"Content-Type": "application/json"}
@@ -41,13 +162,31 @@ class VLKApiClient:
         res = self._post("/auth/register", {"license_key": license_key, "username": username, "password": password, "roblox_username": roblox_username})
         self.token = res["token"]
         self.user = res["user"]
+        self._save_cached_session(password=password)  # Encrypt with password
         return res
 
     def login(self, username: str, password: str) -> dict:
+        # First try to decrypt cached session if it exists
+        if self._encryption_key and self._decrypt_cached_session(password):
+            # Verify token is still valid
+            try:
+                self.user = self._get("/auth/me")
+                return {"token": self.token, "user": self.user}
+            except Exception:
+                # Token invalid, proceed with normal login
+                pass
+        
         res = self._post("/auth/login", {"username": username, "password": password})
         self.token = res["token"]
         self.user = res["user"]
+        self._save_cached_session(password=password)  # Encrypt with password
         return res
+
+    def logout(self):
+        """Clear session and logout."""
+        self.token = None
+        self.user = None
+        self._clear_cached_session()
 
     def update_profile(self, **kwargs) -> dict:
         res = self._patch("/auth/profile", kwargs)
@@ -66,14 +205,24 @@ class VLKApiClient:
         return self._get("/licenses/")
 
     # WEBSOCKET
+    def init_ws_dispatcher(self, parent=None):
+        """Initialize the Qt signal dispatcher for thread-safe WebSocket callbacks."""
+        self._ws_dispatcher = WSSignalDispatcher(parent)
+        # Re-register existing callbacks
+        for event_type, callbacks in self._ws_callbacks.items():
+            for cb in callbacks:
+                self._ws_dispatcher.register_callback(event_type, cb)
+
     def on(self, event_type: str, callback: Callable):
         self._ws_callbacks.setdefault(event_type, []).append(callback)
+        if self._ws_dispatcher:
+            self._ws_dispatcher.register_callback(event_type, callback)
 
     def connect_ws(self):
         if not self.token:
             return
         self._running = True
-        self._ws_thread = threading.Thread(target=self._ws_loop, daemon=True)
+        self._ws_thread = threading.Thread(target=self._ws_loop, daemon=True, name="WebSocketThread")
         self._ws_thread.start()
 
     def disconnect_ws(self):
@@ -93,16 +242,24 @@ class VLKApiClient:
             try:
                 data = json.loads(message)
                 t = data.get("type", "")
-                for cb in self._ws_callbacks.get(t, []):
-                    cb(data)
-                for cb in self._ws_callbacks.get("*", []):
-                    cb(data)
+                # Use dispatcher for thread-safe callback
+                if self._ws_dispatcher:
+                    self._ws_dispatcher.dispatch(t, data)
+                else:
+                    # Fallback: direct call (not thread-safe)
+                    for cb in self._ws_callbacks.get(t, []):
+                        cb(data)
+                    for cb in self._ws_callbacks.get("*", []):
+                        cb(data)
             except Exception:
                 pass
 
         def on_error(ws, error):
-            for cb in self._ws_callbacks.get("error", []):
-                cb({"type": "error", "error": str(error)})
+            if self._ws_dispatcher:
+                self._ws_dispatcher.dispatch("error", {"type": "error", "error": str(error)})
+            else:
+                for cb in self._ws_callbacks.get("error", []):
+                    cb({"type": "error", "error": str(error)})
 
         def on_close(ws, *args):
             if self._running:
@@ -111,8 +268,11 @@ class VLKApiClient:
 
         def on_open(ws):
             self._ws = ws
-            for cb in self._ws_callbacks.get("connected", []):
-                cb({"type": "connected"})
+            if self._ws_dispatcher:
+                self._ws_dispatcher.dispatch("connected", {"type": "connected"})
+            else:
+                for cb in self._ws_callbacks.get("connected", []):
+                    cb({"type": "connected"})
 
         wsa = ws_lib.WebSocketApp(url, on_message=on_message, on_error=on_error, on_close=on_close, on_open=on_open)
         wsa.run_forever(ping_interval=30)

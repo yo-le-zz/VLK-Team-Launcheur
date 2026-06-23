@@ -54,7 +54,7 @@ class VoiceEngine:
         self._deafened = False
         self._speaking = False
 
-        # Callbacks
+        # Callbacks - disabled to prevent threading issues
         self.on_speaking_change: Optional[Callable[[bool], None]] = None
         self.on_peer_speaking: Optional[Callable[[str, bool], None]] = None
 
@@ -105,8 +105,8 @@ class VoiceEngine:
                 frames_per_buffer=CHUNK_FRAMES,
             )
             self._running = True
-            self._capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
-            self._playback_thread = threading.Thread(target=self._playback_loop, daemon=True)
+            self._capture_thread = threading.Thread(target=self._capture_loop, daemon=True, name="VoiceCaptureThread")
+            self._playback_thread = threading.Thread(target=self._playback_loop, daemon=True, name="VoicePlaybackThread")
             self._capture_thread.start()
             self._playback_thread.start()
             return True, ""
@@ -159,8 +159,9 @@ class VoiceEngine:
                 if from_user not in self._playback_buffers:
                     self._playback_buffers[from_user] = []
                 self._playback_buffers[from_user].append(pcm)
-            if self.on_peer_speaking:
-                self.on_peer_speaking(from_user, True)
+            # Callbacks disabled to prevent threading issues
+            # if self.on_peer_speaking:
+            #     self.on_peer_speaking(from_user, True)
         except Exception:
             pass
 
@@ -174,8 +175,9 @@ class VoiceEngine:
                 if self._muted:
                     if self._speaking:
                         self._speaking = False
-                        if self.on_speaking_change:
-                            self.on_speaking_change(False)
+                        # Callbacks disabled to prevent threading issues
+                        # if self.on_speaking_change:
+                        #     self.on_speaking_change(False)
                     continue
 
                 # VAD — simple RMS
@@ -186,8 +188,9 @@ class VoiceEngine:
                     silence_frames = 0
                     if not self._speaking:
                         self._speaking = True
-                        if self.on_speaking_change:
-                            self.on_speaking_change(True)
+                        # Callbacks disabled to prevent threading issues
+                        # if self.on_speaking_change:
+                        #     self.on_speaking_change(True)
                     # Encode + send
                     encoded = self._enc.encode(raw, CHUNK_FRAMES)
                     b64 = base64.b64encode(encoded).decode()
@@ -200,10 +203,13 @@ class VoiceEngine:
                     silence_frames += 1
                     if silence_frames >= 5 and self._speaking:
                         self._speaking = False
-                        if self.on_speaking_change:
-                            self.on_speaking_change(False)
+                        # Callbacks disabled to prevent threading issues
+                        # if self.on_speaking_change:
+                        #     self.on_speaking_change(False)
             except Exception:
                 time.sleep(0.01)
+            # Small sleep to prevent CPU hogging
+            time.sleep(0.001)
 
     def _playback_loop(self):
         while self._running:
@@ -217,8 +223,9 @@ class VoiceEngine:
                         chunk = buf.pop(0)
                         if not buf:
                             self._playback_buffers.pop(user, None)
-                            if self.on_peer_speaking:
-                                self.on_peer_speaking(user, False)
+                            # Callbacks disabled to prevent threading issues
+                            # if self.on_peer_speaking:
+                            #     self.on_peer_speaking(user, False)
                     else:
                         chunk = None
                 if chunk and self._out_stream:

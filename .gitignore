@@ -57,7 +57,7 @@ desktop.ini
 
 # Project specific
 # Local config (keep config.json.example)
-config.json
+# config.json
 *.log
 # *.spec  # Commented out - we use vlk_launcher.spec
 

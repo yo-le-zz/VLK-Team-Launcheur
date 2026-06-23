@@ -35,6 +35,12 @@ class MainWindow(QMainWindow):
             self.setWindowIcon(QIcon(icon_path))
 
         self.setStyleSheet(QSS)
+        
+        # Initialize thread-safe WebSocket dispatcher
+        self.api.init_ws_dispatcher(self)
+        # Set QTimer.singleShot callback for guaranteed main thread execution
+        self.api._ws_dispatcher.set_timer_callback(lambda fn: QTimer.singleShot(0, fn))
+        
         self._build_ui()
         self._connect_ws()
         self._load_announcements()
@@ -156,6 +162,28 @@ class MainWindow(QMainWindow):
         layout.addWidget(sep2)
         self.user_badge = UserBadge(self.api.user)
         layout.addWidget(self.user_badge)
+        
+        # Logout button
+        logout_btn = QPushButton("🚪  LOGOUT")
+        logout_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        logout_btn.clicked.connect(self._logout)
+        logout_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {STATUS_RED};
+                border: none;
+                border-radius: 8px;
+                padding: 12px 16px;
+                font-size: 12px;
+                font-weight: 700;
+                text-align: left;
+            }}
+            QPushButton:hover {{
+                background: {STATUS_RED}15;
+                color: {STATUS_RED};
+            }}
+        """)
+        layout.addWidget(logout_btn)
         return sidebar
 
     def _build_topbar(self) -> QWidget:
@@ -176,6 +204,10 @@ class MainWindow(QMainWindow):
     _TITLES = ["HOME", "CLAN CHAT", "MEMBRES", "PROFIL", "RANKINGS", "ADMIN"]
 
     def _nav_to(self, idx: int):
+        # Notify admin panel when it becomes hidden
+        if hasattr(self, 'panel_admin') and idx != 5:
+            self.panel_admin.on_hide()
+        
         self.stack.setCurrentIndex(idx)
         self.topbar_title.setText(self._TITLES[idx] if idx < len(self._TITLES) else "")
         for btn, bidx in self._nav_btns:
@@ -199,6 +231,11 @@ class MainWindow(QMainWindow):
         self.api.connect_ws()
 
     def _set_status(self, online: bool):
+        """Set connection status - use QTimer for thread safety."""
+        QTimer.singleShot(0, lambda: self._do_set_status(online))
+    
+    def _do_set_status(self, online: bool):
+        """Actually set the status (called in main thread)."""
         color = STATUS_GREEN if online else STATUS_RED
         label = "CONNECTÉ" if online else "DÉCONNECTÉ"
         self.online_indicator.set_color(color)
@@ -206,14 +243,29 @@ class MainWindow(QMainWindow):
         self.online_label.setStyleSheet(f"font-size:11px;color:{color};font-weight:700;letter-spacing:1px;")
 
     def _on_presence(self, data):
+        """Handle presence updates - use QTimer for thread safety."""
+        QTimer.singleShot(0, lambda: self._do_on_presence(data))
+    
+    def _do_on_presence(self, data):
+        """Actually handle presence (called in main thread)."""
         self.panel_members.on_presence(data)
         self.panel_home.update_online_count(data)
 
     def _on_online_list(self, data):
+        """Handle online list updates - use QTimer for thread safety."""
+        QTimer.singleShot(0, lambda: self._do_on_online_list(data))
+    
+    def _do_on_online_list(self, data):
+        """Actually handle online list (called in main thread)."""
         self.panel_members.set_online_list(data.get("members", []))
         self.panel_home.set_online_count(len(data.get("members", [])))
 
     def _on_rank_update(self, data):
+        """Handle rank updates - use QTimer for thread safety."""
+        QTimer.singleShot(0, lambda: self._do_on_rank_update(data))
+    
+    def _do_on_rank_update(self, data):
+        """Actually handle rank update (called in main thread)."""
         if str(data.get("user_id")) == str(self.api.user.get("id")):
             self.api.user["rank"] = data.get("rank", self.api.user["rank"])
             self.user_badge.update_user(self.api.user)
@@ -228,14 +280,46 @@ class MainWindow(QMainWindow):
     # ── Tray ──────────────────────────────────────────────────────────────────
     def _setup_tray(self):
         icon_path = os.path.join(os.path.dirname(__file__), "..", "assets", "icon.png")
-        self.tray = QSystemTrayIcon(QIcon(icon_path) if os.path.exists(icon_path) else QIcon(), self)
-        menu = QMenu()
+        self.tray = QSystemTrayIcon(QIcon(icon_path) if os.path.exists(icon_path) else QIcon())
+        menu = QMenu(None)  # No parent to avoid threading issues
         menu.addAction("Ouvrir", self.show)
         menu.addAction("Quitter", QApplication.quit)
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(lambda r: self.show() if r == QSystemTrayIcon.ActivationReason.Trigger else None)
         self.tray.show()
 
+    def _logout(self):
+        """Logout and return to login screen."""
+        from PySide6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            self, "Logout", 
+            "Are you sure you want to logout?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.api.logout()
+            self.api.disconnect_ws()
+            from src.client.ui.login_window import LoginWindow
+            self.hide()
+            login_window = LoginWindow(self.api)
+            login_window.setWindowTitle(f"{self.clan_name} — Launcher")
+            login_window.login_success.connect(self._on_relogin)
+            login_window.show()
+
+    def _on_relogin(self, result: dict):
+        """Handle re-login after logout."""
+        self.hide()
+        # Update current window with new session
+        self.api.user = result.get("user")
+        self.api.token = result.get("token")
+        self.user_badge.update_user(self.api.user)
+        self.setWindowTitle(f"{self.clan_name}  —  {self.api.user['username']}")
+        self._connect_ws()
+        self.show()
+
     def closeEvent(self, event):
         self.api.disconnect_ws()
+        # Stop voice engine if running
+        if hasattr(self, 'voice_panel') and self.voice_panel._engine:
+            self.voice_panel._leave_voice()
         super().closeEvent(event)

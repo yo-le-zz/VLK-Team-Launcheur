@@ -17,27 +17,34 @@ class HeroBanner(QWidget):
         super().__init__(parent)
         self.setFixedHeight(200)
         self.setObjectName("panel")
+        self._painting = False  # Prevent recursive repaint
 
     def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        grad = QLinearGradient(0, 0, self.width(), self.height())
-        grad.setColorAt(0.0, QColor("#050D1A"))
-        grad.setColorAt(0.5, QColor("#0A1628"))
-        grad.setColorAt(1.0, QColor("#060F1E"))
-        p.fillRect(self.rect(), grad)
-        # Subtle grid lines
-        p.setPen(QColor(BG_BORDER))
-        for x in range(0, self.width(), 40):
-            p.drawLine(x, 0, x, self.height())
-        for y in range(0, self.height(), 40):
-            p.drawLine(0, y, self.width(), y)
-        # Glow overlay
-        glow = QLinearGradient(0, 0, self.width(), 0)
-        glow.setColorAt(0, QColor(0, 102, 255, 20))
-        glow.setColorAt(0.5, QColor(0, 212, 255, 40))
-        glow.setColorAt(1, QColor(0, 102, 255, 20))
-        p.fillRect(self.rect(), glow)
+        if self._painting:
+            return  # Prevent recursive repaint
+        self._painting = True
+        try:
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            grad = QLinearGradient(0, 0, self.width(), self.height())
+            grad.setColorAt(0.0, QColor("#050D1A"))
+            grad.setColorAt(0.5, QColor("#0A1628"))
+            grad.setColorAt(1.0, QColor("#060F1E"))
+            p.fillRect(self.rect(), grad)
+            # Subtle grid lines
+            p.setPen(QColor(BG_BORDER))
+            for x in range(0, self.width(), 40):
+                p.drawLine(x, 0, x, self.height())
+            for y in range(0, self.height(), 40):
+                p.drawLine(0, y, self.width(), y)
+            # Glow overlay
+            glow = QLinearGradient(0, 0, self.width(), 0)
+            glow.setColorAt(0, QColor(0, 102, 255, 20))
+            glow.setColorAt(0.5, QColor(0, 212, 255, 40))
+            glow.setColorAt(1, QColor(0, 102, 255, 20))
+            p.fillRect(self.rect(), glow)
+        finally:
+            self._painting = False
 
 
 class HomePanel(QWidget):
@@ -141,6 +148,11 @@ class HomePanel(QWidget):
         pass  # updated via online_list event
 
     def show_announcement(self, ann: dict):
+        """Show announcement - use QTimer for thread safety when called from WebSocket."""
+        QTimer.singleShot(0, lambda: self._do_show_announcement(ann))
+    
+    def _do_show_announcement(self, ann: dict):
+        """Actually show the announcement widget (called in main thread)."""
         card = AnnouncementCard(ann)
         self.ann_layout.insertWidget(0, card)
 

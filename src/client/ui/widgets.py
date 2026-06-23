@@ -1,6 +1,6 @@
 """VLK Launcher — Shared UI Widgets"""
 from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QVBoxLayout, QFrame
-from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QPoint, QRect, QSize
+from PySide6.QtCore import Qt, QPoint, QRect, QSize
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QLinearGradient, QPolygon
 from src.client.ui.theme import *
 
@@ -11,32 +11,35 @@ class StatusDot(QWidget):
         self._color = color
         self._size = size
         self.setFixedSize(size + 4, size + 4)
-        self._pulse = 0
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.start(50)
+        # Disabled animation timer to prevent threading issues
+        self._timer = None
+        self._painting = False  # Prevent recursive repaint
 
     def set_color(self, color: str):
         self._color = color
         self.update()
 
-    def _tick(self):
-        self._pulse = (self._pulse + 5) % 360
-        self.update()
+    def stop_timer(self):
+        """Stop the timer explicitly (no-op since timer is disabled)."""
+        pass
+    
+    def closeEvent(self, event):
+        """No-op since timer is disabled."""
+        super().closeEvent(event)
 
     def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        import math
-        alpha = int(80 + 40 * math.sin(math.radians(self._pulse)))
-        glow = QColor(self._color)
-        glow.setAlpha(alpha)
-        s = self._size
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(glow)
-        p.drawEllipse(0, 0, s + 4, s + 4)
-        p.setBrush(QColor(self._color))
-        p.drawEllipse(2, 2, s, s)
+        if self._painting:
+            return  # Prevent recursive repaint
+        self._painting = True
+        try:
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            s = self._size
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(self._color))
+            p.drawEllipse(2, 2, s, s)
+        finally:
+            self._painting = False
 
 
 class VLKLogo(QWidget):
@@ -44,27 +47,34 @@ class VLKLogo(QWidget):
         super().__init__(parent)
         self._size = size
         self.setFixedSize(size, size)
+        self._painting = False  # Prevent recursive repaint
 
     def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        s = self._size
-        m = s * 0.06
-        cx, cy = s / 2, s / 2
-        r = s / 2 - m
-        import math
-        pts = []
-        for i in range(6):
-            angle = math.radians(i * 60 - 90)
-            pts.append(QPoint(int(cx + r * math.cos(angle)), int(cy + r * math.sin(angle))))
-        pen = QPen(QColor(ACCENT_CYAN), max(2, s * 0.06))
-        p.setPen(pen)
-        p.setBrush(QColor(BG_BASE))
-        p.drawPolygon(QPolygon(pts))
-        p.setPen(QColor(ACCENT_CYAN))
-        font_size = max(8, int(s * 0.3))
-        p.setFont(QFont("Arial Black", font_size, QFont.Weight.Black))
-        p.drawText(QRect(0, 0, s, s), Qt.AlignmentFlag.AlignCenter, "VLK")
+        if self._painting:
+            return  # Prevent recursive repaint
+        self._painting = True
+        try:
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            s = self._size
+            m = s * 0.06
+            cx, cy = s / 2, s / 2
+            r = s / 2 - m
+            import math
+            pts = []
+            for i in range(6):
+                angle = math.radians(i * 60 - 90)
+                pts.append(QPoint(int(cx + r * math.cos(angle)), int(cy + r * math.sin(angle))))
+            pen = QPen(QColor(ACCENT_CYAN), max(2, s * 0.06))
+            p.setPen(pen)
+            p.setBrush(QColor(BG_BASE))
+            p.drawPolygon(QPolygon(pts))
+            p.setPen(QColor(ACCENT_CYAN))
+            font_size = max(8, int(s * 0.3))
+            p.setFont(QFont("Arial Black", font_size, QFont.Weight.Black))
+            p.drawText(QRect(0, 0, s, s), Qt.AlignmentFlag.AlignCenter, "VLK")
+        finally:
+            self._painting = False
 
 
 class UserBadge(QWidget):
@@ -144,7 +154,7 @@ class MemberCard(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
 
-        dot = StatusDot(STATUS_GREEN, 8)
+        self.dot = StatusDot(STATUS_GREEN, 8)
         name = QLabel(member.get("username", ""))
         name.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {TEXT_PRIMARY};")
 
@@ -157,7 +167,7 @@ class MemberCard(QWidget):
             padding: 2px 6px; border-radius: 4px;
         """)
 
-        layout.addWidget(dot)
+        layout.addWidget(self.dot)
         layout.addSpacing(8)
         layout.addWidget(name)
         layout.addStretch()

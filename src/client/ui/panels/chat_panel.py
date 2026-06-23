@@ -79,7 +79,7 @@ class ChatPanel(QWidget):
         h_layout.setContentsMargins(20, 0, 20, 0)
         title = QLabel("💬  CLAN CHAT")
         title.setStyleSheet(f"font-size: 14px; font-weight: 800; letter-spacing: 2px; color: {TEXT_PRIMARY};")
-        note = QLabel("Messages are temporary — not stored")
+        note = QLabel("Messages are stored during session")
         note.setStyleSheet(f"font-size: 11px; color: {TEXT_MUTED};")
         h_layout.addWidget(title)
         h_layout.addStretch()
@@ -148,15 +148,33 @@ class ChatPanel(QWidget):
         text = self.input.text().strip()
         if not text:
             return
+        # Immediately show the message as sent
+        from datetime import datetime
+        self.add_message({
+            "user_id": str(self.api.user.get("id")),
+            "username": self.api.user.get("username"),
+            "role": self.api.user.get("role", "user"),
+            "content": text,
+            "timestamp": datetime.now().isoformat()
+        })
         self.api.send_chat(text)
         self.input.clear()
 
     def add_message(self, data: dict):
+        """Add message - use QTimer for thread safety when called from WebSocket."""
+        QTimer.singleShot(0, lambda: self._do_add_message(data))
+    
+    def _do_add_message(self, data: dict):
+        """Actually add the message widget (called in main thread)."""
         is_self = data.get("user_id") == str(self.api.user.get("id")) or \
                   data.get("username") == self.api.user.get("username")
         msg_widget = ChatMessage(data, is_self=is_self)
         self.msg_layout.addWidget(msg_widget)
-        # Scroll to bottom
-        QTimer.singleShot(50, lambda: self.scroll.verticalScrollBar().setValue(
+        # Scroll to bottom with slight delay to ensure widget is rendered
+        QTimer.singleShot(50, lambda: self._scroll_to_bottom())
+    
+    def _scroll_to_bottom(self):
+        """Scroll to bottom of chat (called in main thread)."""
+        self.scroll.verticalScrollBar().setValue(
             self.scroll.verticalScrollBar().maximum()
-        ))
+        )

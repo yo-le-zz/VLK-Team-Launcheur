@@ -1,5 +1,7 @@
 import secrets
-from fastapi import APIRouter, Depends, HTTPException
+import os
+import base64
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from pydantic import BaseModel
@@ -102,6 +104,38 @@ async def update_profile(req: ProfileUpdate, creds: HTTPAuthorizationCredentials
     await db.commit()
     await db.refresh(user)
     return _user_dict(user)
+
+@router.post("/upload-avatar")
+async def upload_avatar(file: UploadFile = File(...), creds: HTTPAuthorizationCredentials = Depends(bearer), db: AsyncSession = Depends(get_db)):
+    """Upload avatar image and return base64 encoded URL."""
+    payload = decode_token(creds.credentials)
+    if not payload:
+        raise HTTPException(401)
+    
+    # Validate file type
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Only image files are allowed")
+    
+    # Read file and convert to base64
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:  # 5MB limit
+        raise HTTPException(400, "File too large (max 5MB)")
+    
+    # Encode to base64
+    encoded = base64.b64encode(contents).decode()
+    data_url = f"data:{file.content_type};base64,{encoded}"
+    
+    # Update user avatar
+    result = await db.execute(select(User).where(User.id == int(payload["sub"])))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404)
+    
+    user.avatar_url = data_url
+    await db.commit()
+    await db.refresh(user)
+    
+    return {"avatar_url": data_url}
 
 def _user_dict(u: User) -> dict:
     return {

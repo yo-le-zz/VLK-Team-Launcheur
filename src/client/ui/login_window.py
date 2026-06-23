@@ -3,58 +3,41 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QStackedWidget, QFrame, QSizePolicy, QMessageBox
 )
-from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve, QThread, QObject
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QFont, QColor, QPainter, QLinearGradient, QPen
 import os
 
 from src.client.ui.theme import *
 
-class AuthWorker(QObject):
-    success = Signal(dict)
-    error = Signal(str)
-
-    def __init__(self, fn, *args):
-        super().__init__()
-        self._fn = fn
-        self._args = args
-
-    def run(self):
-        try:
-            result = self._fn(*self._args)
-            self.success.emit(result)
-        except Exception as e:
-            msg = str(e)
-            if "400" in msg:
-                msg = "Invalid credentials or license key."
-            elif "401" in msg:
-                msg = "Wrong username or password."
-            elif "403" in msg:
-                msg = "Account disabled."
-            self.error.emit(msg)
-
-
 class LogoWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedSize(80, 80)
+        self._painting = False  # Prevent recursive repaint
 
     def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        grad = QLinearGradient(0, 0, 80, 80)
-        grad.setColorAt(0, QColor(ACCENT_BLUE))
-        grad.setColorAt(1, QColor(ACCENT_CYAN))
-        pen = QPen(QColor(ACCENT_CYAN), 3)
-        p.setPen(pen)
-        p.setBrush(QColor(BG_BASE))
-        points = [(40, 5), (75, 24), (75, 56), (40, 75), (5, 56), (5, 24)]
-        from PySide6.QtGui import QPolygon
-        from PySide6.QtCore import QPoint
-        poly = QPolygon([QPoint(x, y) for x, y in points])
-        p.drawPolygon(poly)
-        p.setFont(QFont("Arial Black", 18, QFont.Weight.Black))
-        p.setPen(QColor(ACCENT_CYAN))
-        p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "VLK")
+        if self._painting:
+            return  # Prevent recursive repaint
+        self._painting = True
+        try:
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            grad = QLinearGradient(0, 0, 80, 80)
+            grad.setColorAt(0, QColor(ACCENT_BLUE))
+            grad.setColorAt(1, QColor(ACCENT_CYAN))
+            pen = QPen(QColor(ACCENT_CYAN), 3)
+            p.setPen(pen)
+            p.setBrush(QColor(BG_BASE))
+            points = [(40, 5), (75, 24), (75, 56), (40, 75), (5, 56), (5, 24)]
+            from PySide6.QtGui import QPolygon
+            from PySide6.QtCore import QPoint
+            poly = QPolygon([QPoint(x, y) for x, y in points])
+            p.drawPolygon(poly)
+            p.setFont(QFont("Arial Black", 18, QFont.Weight.Black))
+            p.setPen(QColor(ACCENT_CYAN))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "VLK")
+        finally:
+            self._painting = False
 
 
 class GlowLabel(QLabel):
@@ -96,6 +79,22 @@ class LoginWindow(QWidget):
             QWidget#loginRoot {{ background: {BG_VOID}; }}
         """)
         self._build_ui()
+        # Check if we have cached session
+        if self.api.token and self.api.user:
+            self._try_auto_login()
+
+    def _try_auto_login(self):
+        """Try to auto-login with cached token."""
+        try:
+            # Verify token is still valid by calling /me endpoint
+            user_data = self.api.get_me()
+            if user_data:
+                self.login_success.emit({"token": self.api.token, "user": user_data})
+        except Exception:
+            # Token invalid, clear cache
+            self.api.token = None
+            self.api.user = None
+            self.api._clear_cached_session()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -280,15 +279,19 @@ class LoginWindow(QWidget):
                         lambda e: self._on_auth_error(e, self.reg_error, self.reg_btn, "CREATE ACCOUNT"))
 
     def _run_async(self, fn, on_success, on_error):
-        self._thread = QThread()
-        self._worker = AuthWorker(fn)
-        self._worker.moveToThread(self._thread)
-        self._thread.started.connect(self._worker.run)
-        self._worker.success.connect(on_success)
-        self._worker.error.connect(on_error)
-        self._worker.success.connect(self._thread.quit)
-        self._worker.error.connect(self._thread.quit)
-        self._thread.start()
+        """Run fn synchronously to avoid Qt threading issues."""
+        try:
+            result = fn()
+            on_success(result)
+        except Exception as e:
+            msg = str(e)
+            if "400" in msg:
+                msg = "Invalid credentials or license key."
+            elif "401" in msg:
+                msg = "Wrong username or password."
+            elif "403" in msg:
+                msg = "Account disabled."
+            on_error(msg)
 
     def _on_auth_success(self, result: dict):
         self.login_success.emit(result)

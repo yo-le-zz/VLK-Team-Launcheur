@@ -23,6 +23,7 @@ class AvatarWidget(QWidget):
         self._muted = False
         self._initials = "?"
         self._color = ACCENT_BLUE
+        self._painting = False  # Prevent recursive repaint
 
     def set_pixmap(self, px: QPixmap):
         self._pixmap = px.scaled(self._size, self._size, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
@@ -43,46 +44,52 @@ class AvatarWidget(QWidget):
         self.update()
 
     def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        s = self._size
-        off = 3  # ring offset
+        if self._painting:
+            return  # Prevent recursive repaint
+        self._painting = True
+        try:
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            s = self._size
+            off = 3  # ring offset
 
-        # Speaking ring
-        if self._speaking and not self._muted:
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(STATUS_GREEN))
-            p.drawEllipse(0, 0, s + 6, s + 6)
-        elif self._muted:
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(STATUS_RED))
-            p.drawEllipse(0, 0, s + 6, s + 6)
+            # Speaking ring
+            if self._speaking and not self._muted:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor(STATUS_GREEN))
+                p.drawEllipse(0, 0, s + 6, s + 6)
+            elif self._muted:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor(STATUS_RED))
+                p.drawEllipse(0, 0, s + 6, s + 6)
 
-        # Clip circle
-        clip_path = __import__("PySide6.QtGui", fromlist=["QPainterPath"]).QPainterPath()
-        clip_path.addEllipse(off, off, s, s)
-        p.setClipPath(clip_path)
+            # Clip circle
+            clip_path = __import__("PySide6.QtGui", fromlist=["QPainterPath"]).QPainterPath()
+            clip_path.addEllipse(off, off, s, s)
+            p.setClipPath(clip_path)
 
-        if self._pixmap:
-            p.drawPixmap(off, off, self._pixmap)
-        else:
-            p.setBrush(QColor(BG_CARD))
-            p.drawEllipse(off, off, s, s)
-            p.setFont(QFont("Arial", s // 3, QFont.Weight.Bold))
-            p.setPen(QColor(self._color))
-            from PySide6.QtCore import QRect
-            p.drawText(QRect(off, off, s, s), Qt.AlignmentFlag.AlignCenter, self._initials)
+            if self._pixmap:
+                p.drawPixmap(off, off, self._pixmap)
+            else:
+                p.setBrush(QColor(BG_CARD))
+                p.drawEllipse(off, off, s, s)
+                p.setFont(QFont("Arial", s // 3, QFont.Weight.Bold))
+                p.setPen(QColor(self._color))
+                from PySide6.QtCore import QRect
+                p.drawText(QRect(off, off, s, s), Qt.AlignmentFlag.AlignCenter, self._initials)
 
-        p.setClipping(False)
+            p.setClipping(False)
 
-        # Mute icon overlay (bottom-right)
-        if self._muted:
-            p.setBrush(QColor(STATUS_RED))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(s - 4, s - 4, 14, 14)
-            p.setPen(QColor("#FFFFFF"))
-            p.setFont(QFont("Arial", 7, QFont.Weight.Bold))
-            p.drawText(s - 4, s - 4, 14, 14, Qt.AlignmentFlag.AlignCenter, "M")
+            # Mute icon overlay (bottom-right)
+            if self._muted:
+                p.setBrush(QColor(STATUS_RED))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawEllipse(s - 4, s - 4, 14, 14)
+                p.setPen(QColor("#FFFFFF"))
+                p.setFont(QFont("Arial", 7, QFont.Weight.Bold))
+                p.drawText(s - 4, s - 4, 14, 14, Qt.AlignmentFlag.AlignCenter, "M")
+        finally:
+            self._painting = False
 
 
 class VoiceUserCard(QWidget):
@@ -95,6 +102,7 @@ class VoiceUserCard(QWidget):
         self.is_self = is_self
         self._muted_by_me = False
         self._speaking = False
+        self._painting = False  # Prevent recursive repaint
 
         self.setObjectName("card")
         self.setFixedHeight(68)
@@ -160,6 +168,15 @@ class VoiceUserCard(QWidget):
     def set_muted(self, muted: bool):
         self.avatar.set_muted(muted)
         self.status_lbl.setText("🔇 Muet" if muted else "Connecté")
+    
+    def paintEvent(self, event):
+        if self._painting:
+            return  # Prevent recursive repaint
+        self._painting = True
+        try:
+            super().paintEvent(event)
+        finally:
+            self._painting = False
 
 
 class VoicePanel(QWidget):
@@ -290,11 +307,15 @@ class VoicePanel(QWidget):
             self.api.send_ws(data)
 
         self._engine = VoiceEngine(_send, user["username"])
-        self._engine.on_speaking_change = self._on_self_speaking
-        self._engine.on_peer_speaking = self._on_peer_speaking
+        # Don't set callbacks directly - the VoicePanel will handle via signals
+        # self._engine.on_speaking_change = self._on_self_speaking
+        # self._engine.on_peer_speaking = self._on_peer_speaking
 
         ok, err = self._engine.start()
         if not ok:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Voice Chat Error", 
+                f"Could not join voice chat:\n{err}\n\nPlease install required dependencies:\npip install pyaudio opuslib")
             self.conn_dot.setText(f"Erreur: {err[:40]}")
             self.conn_dot.setStyleSheet(f"color: {STATUS_RED}; font-size: 10px;")
             return
@@ -398,29 +419,26 @@ class VoicePanel(QWidget):
     # ── WS events (called from MainWindow) ───────────────────────────────────
 
     def on_ws_message(self, data: dict):
+        """Handle WebSocket messages - use QTimer for thread safety."""
         t = data.get("type")
         uid = data.get("user_id", "")
         uname = data.get("username", "")
 
         if t == "voice_join":
-            self._add_user(uid, uname)
+            QTimer.singleShot(0, lambda u=uid, n=uname: self._add_user(u, n))
         elif t == "voice_leave":
-            self._remove_user(uid)
+            QTimer.singleShot(0, lambda u=uid: self._remove_user(u))
         elif t == "voice_audio" and self._engine:
+            # Audio processing can happen in background thread
             self._engine.receive_audio(uname, data.get("data", ""))
         elif t == "voice_users":
-            for u in data.get("users", []):
-                self._add_user(u["user_id"], u["username"])
-
-    def _on_self_speaking(self, speaking: bool):
-        uid = str(self.api.user["id"])
-        if uid in self._users:
-            self._users[uid].set_speaking(speaking)
-
-    def _on_peer_speaking(self, username: str, speaking: bool):
-        for uid, card in self._users.items():
-            if card.username == username:
-                card.set_speaking(speaking)
+            users_list = data.get("users", [])
+            QTimer.singleShot(0, lambda u=users_list: self._handle_voice_users(u))
+    
+    def _handle_voice_users(self, users: list):
+        """Handle voice users list in main thread."""
+        for u in users:
+            self._add_user(u["user_id"], u["username"])
 
     def update_clan_name(self, name: str):
         # update clan title label dynamically
