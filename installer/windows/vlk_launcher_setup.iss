@@ -72,6 +72,7 @@ Type: dirifempty; Name: "{app}"
 function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;
+  UninstallString: String;
 begin
   Result := True;
   
@@ -81,9 +82,9 @@ begin
     if MsgBox('VLK Launcher est déjà installé. Voulez-vous le désinstaller avant la nouvelle installation?', mbConfirmation, MB_YESNO) = IDYES then
     begin
       // Lancer le désinstallateur
-      if RegQueryStringValue(HKEY_LOCAL_MACHINE, 'Software\VOLKZ Clan\VLKLauncher', 'UninstallString', '') then
+      if RegQueryStringValue(HKEY_LOCAL_MACHINE, 'Software\VOLKZ Clan\VLKLauncher', 'UninstallString', UninstallString) then
       begin
-        Exec(ExpandConstant('{reg:HKLM\Software\VOLKZ Clan\VLKLauncher,UninstallString}'), '/SILENT', '', SW_SHOW, ewWaitUntilTerminated, ResultCode);
+        Exec(UninstallString, '/SILENT', '', SW_SHOW, ewWaitUntilTerminated, ResultCode);
       end;
     end;
   end;
