@@ -105,6 +105,11 @@ class VoiceEngine:
 
     def stop(self):
         self._running = False
+        # Wait for threads to finish
+        if self._capture_thread and self._capture_thread.is_alive():
+            self._capture_thread.join(timeout=1.0)
+        if self._playback_thread and self._playback_thread.is_alive():
+            self._playback_thread.join(timeout=1.0)
         if self._in_stream:
             try: self._in_stream.stop_stream(); self._in_stream.close()
             except: pass
@@ -115,6 +120,7 @@ class VoiceEngine:
             try: self._pa.terminate()
             except: pass
         self._in_stream = self._out_stream = self._pa = None
+        self._capture_thread = self._playback_thread = None
 
     def set_muted(self, muted: bool):
         self._muted = muted

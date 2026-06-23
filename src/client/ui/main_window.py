@@ -81,6 +81,9 @@ class MainWindow(QMainWindow):
         mid_layout.addWidget(self.voice_panel)
         root.addWidget(mid)
 
+        # Initialize navigation after stack is created
+        self._nav_to(0)
+
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget(); sidebar.setObjectName("sidebar"); sidebar.setFixedWidth(200)
         layout = QVBoxLayout(sidebar)
@@ -153,7 +156,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(sep2)
         self.user_badge = UserBadge(self.api.user)
         layout.addWidget(self.user_badge)
-        self._nav_to(0)
         return sidebar
 
     def _build_topbar(self) -> QWidget:

@@ -1,6 +1,6 @@
 """VLK Launcher — Admin Router
-Auth: password query parameter or X-Master-Password header (matches MASTER_PASSWORD in .env)
-No token required — master password is the sole gate.
+Auth: JWT token required for admin operations (admin or superadmin role)
+Master password can be used to get a temporary admin token for initial setup.
 """
 import secrets
 import os
@@ -15,11 +15,12 @@ from datetime import datetime, timezone
 from src.server.core.database import get_db, User, License, Announcement
 from src.server.core.config import settings
 from src.server.core.ws_manager import manager
+from src.server.core.auth_utils import decode_token, create_token, require_role
 
 router = APIRouter()
 
 
-# ── Auth dependency ───────────────────────────────────────────────────────────
+# ── Auth dependencies ─────────────────────────────────────────────────────────
 
 def check_master(
     password: str = Query(None),
@@ -29,6 +30,16 @@ def check_master(
     auth_password = password or x_master_password
     if not auth_password or auth_password != settings.MASTER_PASSWORD:
         raise HTTPException(403, "Invalid master password")
+
+
+def get_current_admin(payload: dict = Depends(require_role("admin", "superadmin"))):
+    """Vérifie que l'utilisateur a un rôle admin ou superadmin"""
+    return payload
+
+
+def get_current_superadmin(payload: dict = Depends(require_role("superadmin"))):
+    """Vérifie que l'utilisateur a un rôle superadmin"""
+    return payload
 
 
 # ── Serve Admin Panel HTML ───────────────────────────────────────────────────
@@ -48,10 +59,49 @@ async def admin_panel():
         raise HTTPException(404, "Admin panel not found")
 
 
+# ── Admin Login (Master Password) ────────────────────────────────────────────
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+    master_password: str
+
+@router.post("/login")
+async def admin_login(req: AdminLoginRequest, db: AsyncSession = Depends(get_db)):
+    """Login with username + password + master password to get admin token"""
+    # Vérifier le master password
+    if req.master_password != settings.MASTER_PASSWORD:
+        raise HTTPException(403, "Invalid master password")
+    
+    # Vérifier l'utilisateur et son mot de passe
+    from src.server.core.auth_utils import verify_password
+    result = await db.execute(select(User).where(User.username == req.username))
+    user = result.scalar_one_or_none()
+    
+    if not user or not verify_password(req.password, user.password_hash):
+        raise HTTPException(401, "Invalid credentials")
+    
+    # Vérifier que l'utilisateur a un rôle admin ou superadmin
+    if user.role not in ("admin", "superadmin"):
+        raise HTTPException(403, "User must be admin or superadmin")
+    
+    # Créer un token JWT
+    token = create_token(user.id, user.username, user.role)
+    
+    return {
+        "token": token,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role
+        }
+    }
+
+
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
 @router.get("/stats")
-async def stats(db: AsyncSession = Depends(get_db), _=Depends(check_master)):
+async def stats(db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)):
     total_users     = (await db.execute(select(func.count(User.id)))).scalar()
     active_users    = (await db.execute(select(func.count(User.id)).where(User.active == True))).scalar()
     total_licenses  = (await db.execute(select(func.count(License.id)))).scalar()
@@ -74,7 +124,7 @@ async def stats(db: AsyncSession = Depends(get_db), _=Depends(check_master)):
 # ── Users ─────────────────────────────────────────────────────────────────────
 
 @router.get("/users")
-async def list_users(db: AsyncSession = Depends(get_db), _=Depends(check_master)):
+async def list_users(db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)):
     r = await db.execute(select(User).order_by(User.id))
     return [_user_dict(u) for u in r.scalars().all()]
 
@@ -90,12 +140,26 @@ class UserPatch(BaseModel):
 async def patch_user(
     user_id: int, req: UserPatch,
     db: AsyncSession = Depends(get_db),
-    _=Depends(check_master),
+    current_admin: dict = Depends(get_current_admin),
 ):
     r = await db.execute(select(User).where(User.id == user_id))
     user = r.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")
+    
+    # Restriction: seul les superadmins peuvent désactiver des comptes
+    if req.active is not None and req.active == False:
+        # Vérifier que l'utilisateur actuel est superadmin
+        if current_admin.get("role") != "superadmin":
+            raise HTTPException(403, "Only superadmins can deactivate accounts")
+        # Empêcher la désactivation de superadmins
+        if user.role == "superadmin":
+            raise HTTPException(403, "Cannot deactivate superadmin accounts")
+    
+    # Restriction: seul les superadmins peuvent modifier les rôles
+    if req.role is not None and current_admin.get("role") != "superadmin":
+        raise HTTPException(403, "Only superadmins can change user roles")
+    
     if req.active is not None:
         user.active = req.active
     if req.role is not None:
@@ -123,12 +187,15 @@ async def patch_user(
 async def delete_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(check_master),
+    current_admin: dict = Depends(get_current_superadmin),
 ):
     r = await db.execute(select(User).where(User.id == user_id))
     user = r.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")
+    # Empêcher la suppression de superadmins
+    if user.role == "superadmin":
+        raise HTTPException(403, "Cannot delete superadmin accounts")
     # Free their license
     if user.license_key:
         lic_r = await db.execute(select(License).where(License.key == user.license_key))
@@ -143,7 +210,7 @@ async def delete_user(
 # ── Licenses ──────────────────────────────────────────────────────────────────
 
 @router.get("/licenses")
-async def list_licenses(db: AsyncSession = Depends(get_db), _=Depends(check_master)):
+async def list_licenses(db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)):
     r = await db.execute(select(License).order_by(License.id))
     return [_lic_dict(l) for l in r.scalars().all()]
 
@@ -157,7 +224,7 @@ class LicenseCreate(BaseModel):
 async def generate_licenses(
     req: LicenseCreate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(check_master),
+    current_admin: dict = Depends(get_current_superadmin),
 ):
     if req.role not in ("user", "admin", "superadmin"):
         raise HTTPException(400, "Invalid role")
@@ -180,7 +247,7 @@ class LicensePatch(BaseModel):
 async def patch_license(
     key: str, req: LicensePatch,
     db: AsyncSession = Depends(get_db),
-    _=Depends(check_master),
+    current_admin: dict = Depends(get_current_superadmin),
 ):
     r = await db.execute(select(License).where(License.key == key))
     lic = r.scalar_one_or_none()
@@ -198,7 +265,7 @@ async def patch_license(
 async def delete_license(
     key: str,
     db: AsyncSession = Depends(get_db),
-    _=Depends(check_master),
+    current_admin: dict = Depends(get_current_superadmin),
 ):
     r = await db.execute(select(License).where(License.key == key))
     lic = r.scalar_one_or_none()
@@ -217,7 +284,7 @@ async def delete_license(
 # ── Announcements ─────────────────────────────────────────────────────────────
 
 @router.get("/announcements")
-async def list_announcements(db: AsyncSession = Depends(get_db), _=Depends(check_master)):
+async def list_announcements(db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)):
     r = await db.execute(select(Announcement).order_by(Announcement.created_at.desc()))
     return [_ann_dict(a) for a in r.scalars().all()]
 
@@ -232,7 +299,7 @@ class AnnouncementCreate(BaseModel):
 async def create_announcement(
     req: AnnouncementCreate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(check_master),
+    _=Depends(get_current_admin),
 ):
     if req.priority not in ("normal", "important", "urgent"):
         raise HTTPException(400, "Invalid priority")
@@ -248,7 +315,7 @@ async def create_announcement(
 async def delete_announcement(
     ann_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(check_master),
+    _=Depends(get_current_admin),
 ):
     r = await db.execute(select(Announcement).where(Announcement.id == ann_id))
     ann = r.scalar_one_or_none()
@@ -268,7 +335,7 @@ class BroadcastMsg(BaseModel):
 @router.post("/broadcast")
 async def broadcast_message(
     req: BroadcastMsg,
-    _=Depends(check_master),
+    _=Depends(get_current_admin),
 ):
     """Send a system chat message to all connected users."""
     await manager.broadcast({

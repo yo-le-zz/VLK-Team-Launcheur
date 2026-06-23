@@ -9,7 +9,20 @@ permissions:
   contents: write
 
 jobs:
+  extract-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: |
+          VERSION=$(python3 scripts/extract_version.py)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
   build-windows:
+    needs: extract-version
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,52 +30,100 @@ jobs:
         with: {python-version: "3.11"}
       - name: Install deps
         run: pip install -r src/client/requirements.txt
-      - name: Build
+      - name: Build executable
         run: pyinstaller vlk_launcher.spec --distpath dist/windows --workpath build/windows --noconfirm
-      - name: Zip
-        run: Compress-Archive -Path dist/windows/VLKLauncher.exe -DestinationPath dist/VLKLauncher-windows.zip
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup -y
+      - name: Build installer
+        run: |
+          cd installer/windows
+          .\build_installer.bat ${{ needs.extract-version.outputs.version }}
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with: {name: VLKLauncher-windows-installer, path: installer/windows/output/VLKLauncher-Setup-${{ needs.extract-version.outputs.version }}.exe}
+      - name: Upload standalone
+        run: Compress-Archive -Path dist/windows/* -DestinationPath dist/VLKLauncher-windows-standalone.zip
         shell: pwsh
       - uses: actions/upload-artifact@v4
-        with: {name: VLKLauncher-windows, path: dist/VLKLauncher-windows.zip}
+        with: {name: VLKLauncher-windows-standalone, path: dist/VLKLauncher-windows-standalone.zip}
 
   build-macos:
+    needs: extract-version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.11"}
+      - name: Install portaudio
+        run: brew install portaudio
       - name: Install deps
         run: pip install -r src/client/requirements.txt
-      - name: Build
+      - name: Build executable
         run: pyinstaller vlk_launcher.spec --distpath dist/macos --workpath build/macos --noconfirm
-      - name: Zip
-        run: cd dist/macos && zip -r ../VLKLauncher-macos.zip "VLK Launcher.app"
+      - name: Build package
+        run: |
+          cd installer/macos
+          ./build_pkg.sh ${{ needs.extract-version.outputs.version }}
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with: {name: VLKLauncher-macos-pkg, path: installer/macos/output/VLKLauncher-${{ needs.extract-version.outputs.version }}.pkg}
+      - name: Upload standalone
+        run: cd dist/macos && zip -r ../../VLKLauncher-macos-standalone.zip "VLKLauncher.app"
       - uses: actions/upload-artifact@v4
-        with: {name: VLKLauncher-macos, path: dist/VLKLauncher-macos.zip}
+        with: {name: VLKLauncher-macos-standalone, path: VLKLauncher-macos-standalone.zip}
 
   release:
-    needs: [build-windows, build-macos]
+    needs: [extract-version, build-windows, build-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - id: version
-        run: echo "version=v1.0.0-$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
       - uses: actions/download-artifact@v4
-        with: {name: VLKLauncher-windows, path: release-assets/}
+        with: {name: VLKLauncher-windows-installer, path: release-assets/}
       - uses: actions/download-artifact@v4
-        with: {name: VLKLauncher-macos, path: release-assets/}
-      - uses: softprops/action-gh-release@v2
+        with: {name: VLKLauncher-macos-pkg, path: release-assets/}
+      - uses: actions/download-artifact@v4
+        with: {name: VLKLauncher-windows-standalone, path: release-assets/}
+      - uses: actions/download-artifact@v4
+        with: {name: VLKLauncher-macos-standalone, path: release-assets/}
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: "VLK Launcher ${{ steps.version.outputs.version }}"
+          tag_name: v${{ needs.extract-version.outputs.version }}
+          name: "VLK Launcher ${{ needs.extract-version.outputs.version }}"
           body: |
             ## VLK Launcher — VOLKZ Clan
+            
+            **Version:** ${{ needs.extract-version.outputs.version }}
+            **Créé par:** yolezz
+            
+            ### 📦 Installateurs (recommandé - hors ligne)
+            Les installateurs embarquent tous les fichiers nécessaires et fonctionnent sans connexion internet.
+            
+            - **Windows:** `VLKLauncher-Setup-${{ needs.extract-version.outputs.version }}.exe` - Installateur complet avec désinstallation
+            - **macOS:** `VLKLauncher-${{ needs.extract-version.outputs.version }}.pkg` - Package d'installation standard
+            
+            ### 📁 Versions standalone
+            Fichiers compilés sans installateur.
+            
+            - **Windows:** `VLKLauncher-windows-standalone.zip`
+            - **macOS:** `VLKLauncher-macos-standalone.zip`
+            
+            ### 🔑 Obtention d'une licence
+            Pour utiliser ce logiciel, contactez **yolezz**:
+            - Discord: yolezz
+            - Email: yolezz.secret@gmail.com
+            
+            ### ✨ Fonctionnalités
             - Config auto-chargée depuis GitHub (`config.json`)
             - Vocal intégré (Opus + PyAudio) avec PDP, mute, indicators
             - Chat texte temps réel
             - Membres en ligne, rankings admin
+            - Système de licences sécurisé
           files: |
-            release-assets/VLKLauncher-windows.zip
-            release-assets/VLKLauncher-macos.zip
+            release-assets/VLKLauncher-Setup-${{ needs.extract-version.outputs.version }}.exe
+            release-assets/VLKLauncher-${{ needs.extract-version.outputs.version }}.pkg
+            release-assets/VLKLauncher-windows-standalone.zip
+            release-assets/VLKLauncher-macos-standalone.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

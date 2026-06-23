@@ -14,6 +14,7 @@ from src.client.ui.theme import QSS, BG_VOID, ACCENT_CYAN, TEXT_MUTED
 from src.client.ui.login_window import LoginWindow
 from src.client.ui.main_window import MainWindow
 from src.client.core.api import VLKApiClient
+from src.client.core.updater import get_updater
 
 
 def make_splash(app) -> QSplashScreen:
@@ -72,8 +73,29 @@ def main():
     def on_login(result: dict):
         splash.hide()
         login_window.hide()
+        
+        # Check for updates in background
+        def check_updates():
+            try:
+                updater = get_updater()
+                has_update, release_info = updater.check_for_updates()
+                if has_update and release_info:
+                    # Show update dialog after main window is shown
+                    QTimer.singleShot(1000, lambda: show_update_dialog(release_info, main_window))
+            except Exception as e:
+                print(f"Update check failed: {e}")
+        
+        def show_update_dialog(release_info, main_window):
+            from src.client.ui.dialogs.update_dialog import UpdateDialog
+            dialog = UpdateDialog(release_info, main_window)
+            dialog.show()
+        
         main_window = MainWindow(api, clan_name=clan_name)
         main_window.show()
+        
+        # Start update check after short delay
+        QTimer.singleShot(2000, check_updates)
+        
         login_window._main = main_window
 
     login_window.login_success.connect(on_login)
