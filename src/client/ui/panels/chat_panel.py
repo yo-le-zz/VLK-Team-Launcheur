@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QPushButton, QScrollArea, QFrame, QSizePolicy
 )
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPixmap
 from src.client.ui.theme import *
 
 
@@ -18,6 +19,7 @@ class ChatMessage(QWidget):
         username = data.get("username", "unknown")
         role = data.get("role", "user")
         content = data.get("content", "")
+        avatar_url = data.get("avatar_url", "")
         ts = data.get("timestamp", "")
         if ts:
             try:
@@ -29,6 +31,79 @@ class ChatMessage(QWidget):
         rank_color = RANK_COLORS.get(data.get("rank","Recruit"), TEXT_SECONDARY)
 
         header = QHBoxLayout()
+        
+        # Avatar
+        avatar_size = 32
+        avatar_label = QLabel()
+        avatar_label.setFixedSize(avatar_size, avatar_size)
+        if avatar_url:
+            try:
+                from PySide6.QtCore import QUrl
+                from PySide6.QtNetwork import QNetworkRequest, QNetworkAccessManager
+                import os
+                import hashlib
+                
+                # Create a cache path for avatars
+                cache_dir = os.path.join(os.path.expanduser("~"), ".vlk_avatars")
+                os.makedirs(cache_dir, exist_ok=True)
+                
+                # Generate cache filename from URL
+                url_hash = hashlib.md5(avatar_url.encode()).hexdigest()
+                cache_path = os.path.join(cache_dir, f"{url_hash}.png")
+                
+                if os.path.exists(cache_path):
+                    # Load from cache
+                    pixmap = QPixmap(cache_path)
+                    if not pixmap.isNull():
+                        scaled_pixmap = pixmap.scaled(avatar_size, avatar_size, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+                        avatar_label.setPixmap(scaled_pixmap)
+                else:
+                    # Download and cache
+                    try:
+                        import requests
+                        response = requests.get(avatar_url, timeout=5)
+                        if response.status_code == 200:
+                            with open(cache_path, 'wb') as f:
+                                f.write(response.content)
+                            pixmap = QPixmap(cache_path)
+                            if not pixmap.isNull():
+                                scaled_pixmap = pixmap.scaled(avatar_size, avatar_size, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+                                avatar_label.setPixmap(scaled_pixmap)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        
+        pix_loaded = False
+        try:
+            pix = avatar_label.pixmap()
+            if pix is not None and not pix.isNull():
+                pix_loaded = True
+        except Exception:
+            pix_loaded = False
+
+        if not pix_loaded:
+            # Show initials if no avatar
+            initials = username[:2].upper()
+            avatar_label.setText(initials)
+            avatar_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            avatar_label.setStyleSheet(f"""
+                background: {BG_ELEVATED};
+                color: {ACCENT_CYAN if is_self else ACCENT_BLUE};
+                border-radius: {avatar_size // 2}px;
+                font-size: 12px;
+                font-weight: 800;
+            """)
+        else:
+            # Keep image but still draw a border
+            avatar_label.setStyleSheet(f"""
+                border-radius: {avatar_size // 2}px;
+                border: 2px solid {BG_BORDER};
+            """)
+        
+        header.addWidget(avatar_label)
+        header.addSpacing(8)
+        
         name_lbl = QLabel(username)
         name_lbl.setStyleSheet(f"font-size: 13px; font-weight: 800; color: {'#00D4FF' if is_self else TEXT_PRIMARY}; background: transparent;")
         role_badge = QLabel(role.upper())

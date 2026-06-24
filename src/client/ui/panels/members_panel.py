@@ -67,7 +67,19 @@ class MembersPanel(QWidget):
         action = data.get("action")
         uid = data.get("user_id")
         if action == "join":
-            self._members[uid] = {"user_id": uid, "username": data.get("username"), "role": data.get("role", "user")}
+            self._members[uid] = {
+                "user_id": uid,
+                "username": data.get("username"),
+                "role": data.get("role", "user"),
+            }
+            # Make sure self user is always visible
+            self_id = str(self.api.user.get("id"))
+            if self_id and self_id not in self._members:
+                self._members[self_id] = {
+                    "user_id": self_id,
+                    "username": self.api.user.get("username"),
+                    "role": self.api.user.get("role", "user"),
+                }
         elif action == "leave":
             self._members.pop(uid, None)
         # Ensure self is always in the list

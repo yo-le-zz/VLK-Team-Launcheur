@@ -1,31 +1,32 @@
 # VLK Launcher — VOLKZ Clan
 
-> Lanceur SaaS esports privé pour le clan VOLKZ — Roblox Rivals.
+> Private esports SaaS launcher for the VOLKZ clan — Roblox Rivals.
 
-**Créé par:** yolezz  
+**Author:** yolezz  
 **Version:** 1.0.0  
-**Plateforme:** Windows + macOS
+**Platforms:** Windows + macOS
 
 ---
 
-## 📋 Table des matières
+## 📋 Table of contents
 
 - [Architecture](#architecture)
-- [Fonctionnalités](#fonctionnalités)
-- [Installation rapide](#installation-rapide)
+- [Features](#features)
+- [Quick installation](#quick-installation)
 - [Configuration](#configuration)
-- [Système d'authentification](#système-dauthentification)
-- [Intégration vocale](#intégration-vocale)
-- [Panneau d'administration](#panneau-dadministration)
+- [Authentication system](#authentication-system)
+- [Voice integration](#voice-integration)
+- [Admin panel](#admin-panel)
 - [CI/CD](#cicd)
-- [Installateurs](#installateurs)
-- [Licence](#licence)
+- [Installers](#installers)
+- [License](#license)
+
 
 ---
 
 ## 🏗️ Architecture
 
-Pour une vue détaillée de la structure du projet, voir [STRUCTURE.md](STRUCTURE.md).
+For a detailed view of the project structure, see [STRUCTURE.md](STRUCTURE.md).
 
 ```
 vlk-launcher/
@@ -54,22 +55,25 @@ vlk-launcher/
 
 ---
 
-## ✨ Fonctionnalités
+## Features
+
 
 ### Client
-- **Interface moderne**: Design sombre avec thème personnalisé
-- **Panneaux**: Home, Chat, Members, Profile, Ranking, Admin
-- **Chat en temps réel**: WebSocket pour la communication instantanée
-- **Système de rangs**: Recruit → Member → Veteran → Elite → Officer → Commander → Legend
-- **Points de rang**: Système de progression basé sur les points
-- **Profil utilisateur**: Gestion du profil et réassignation de licence
-- **Intégration vocale**: Support de LiveKit, Mumble et WebRTC
+- **Modern UI**: Dark design with a custom theme
+- **Panels**: Home, Chat, Members, Profile, Ranking, Admin
+- **Real-time chat**: WebSocket for instant communication
+- **Ranks system**: Recruit → Member → Veteran → Elite → Officer → Commander → Legend
+- **Rank points**: Progression system based on points
+- **User profile**: Profile management and license re-assignment
+- **Voice integration**: Support for LiveKit, Mumble, and WebRTC
 
-### Serveur
+
+### Server
+
 - **API REST**: FastAPI avec documentation automatique
 - **Base de données**: SQLAlchemy avec support async
-- **Authentification JWT**: Tokens sécurisés avec expiration
-- **Gestion des licences**: Système de clés de licence avec rôles
+- **JWT authentication**: Secure tokens with configurable expiration
+- **License management**: License key system with roles
 - **Panneau admin**: Interface web pour la gestion complète
 - **Annonces**: Système de diffusion d'annonces aux utilisateurs
 - **WebSocket**: Communication temps réel pour le chat et les mises à jour
@@ -83,26 +87,26 @@ vlk-launcher/
 
 ---
 
-## 🚀 Installation rapide
+## Quick installation
 
-### Prérequis
+### Prerequisites
 
 - Python 3.11 ou supérieur
 - pip (gestionnaire de paquets Python)
 
-### Serveur
+### Server
 
-1. **Cloner le repository**
+1. **Clone the repository**
 ```bash
 cd vlk-launcher
 ```
 
 2. **Installer les dépendances**
 ```bash
-pip install -r src/server/requirements.txt
+uv pip install -r src/server/requirements.txt
 ```
 
-3. **Configurer l'environnement**
+3. **Configure the environment**
 ```bash
 cp .env.example .env
 # Éditez .env avec vos configurations (clés secrètes, DB, etc.)
@@ -124,7 +128,7 @@ uvicorn src.server.main:app --host 0.0.0.0 --port 8000 --reload
 
 1. **Installer les dépendances**
 ```bash
-pip install -r src/client/requirements.txt
+uv pip install -r src/client/requirements.txt
 ```
 
 2. **Configurer l'URL du serveur**
@@ -144,7 +148,7 @@ python -m src.client.main
 
 ### Build (manuel)
 
-Pour créer un exécutable standalone:
+To create a standalone executable:
 
 ```bash
 pip install pyinstaller
@@ -162,7 +166,7 @@ pyinstaller vlk_launcher.spec
 | `DATABASE_URL` | `sqlite+aiosqlite:///./vlk.db` | Connexion base de données |
 | `JWT_SECRET` | — | **À modifier** - Secret pour les tokens JWT |
 | `JWT_EXPIRE_HOURS` | `24` | Durée de validité des tokens (heures) |
-| `MASTER_PASSWORD` | — | Mot de passe master pour le panneau admin |
+| `MASTER_PASSWORD` | — | Admin master password |
 | `VOICE_SERVICE` | `livekit` | Service vocal: `livekit` / `mumble` / `webrtc` |
 | `LIVEKIT_URL` | — | URL du serveur LiveKit |
 | `LIVEKIT_API_KEY` | — | Clé API LiveKit |
@@ -185,12 +189,12 @@ LIVEKIT_API_SECRET=votre_api_secret
 
 ---
 
-## 🔐 Système d'authentification
+## Authentication system
 
-### Flux d'inscription
+### Registration flow
 1. **Clé de licence** → Entrer une clé valide
 2. **Nom d'utilisateur** → Choisir un pseudo unique
-3. **Mot de passe** → Définir un mot de passe sécurisé
+3. **Password** → Set a strong password
 
 ### Rôles utilisateurs
 - **user**: Utilisateur standard avec accès aux fonctionnalités de base
@@ -201,13 +205,13 @@ LIVEKIT_API_SECRET=votre_api_secret
 - Tokens JWT avec expiration configurable (24h par défaut)
 - Hachage des mots de passe avec bcrypt
 - Panneau admin protégé par mot de passe master
-- Support de la réassignation de licence dans le panneau Profil
+Support for license re-assignment in the Profile panel
 
 ---
 
-## 🎙️ Intégration vocale
+## Voice integration
 
-Le vocal est géré par des services externes. Configurez via `.env`:
+Voice chat is handled by external services. Configure via `.env`:
 
 ### LiveKit (par défaut)
 Génère un lien LiveKit Meet pour la salle VLK.
@@ -239,14 +243,15 @@ WEBRTC_URL=https://votre-service-webrtc.com
 
 ---
 
-## 👨‍💼 Panneau d'administration
+## Admin panel
 
 ### Accès
-Le panneau admin est accessible via:
-- **Interface web**: `http://votre-serveur:8000/admin`
-- **Authentification**: Mot de passe master (MASTER_PASSWORD)
+The admin panel can be accessed via:
+- **Web interface**: `http://your-server:8000/admin`
+- **Authentication**: Master password (MASTER_PASSWORD)
 
-### Fonctionnalités
+### Key features
+
 
 #### Tableau de bord
 - Statistiques en temps réel
@@ -278,7 +283,7 @@ Le panneau admin est accessible via:
 
 ---
 
-## 🔄 CI/CD
+## CI/CD
 
 Les pushs sur la branche `main` déclenchent automatiquement GitHub Actions:
 
@@ -299,7 +304,7 @@ Les pushs sur la branche `main` déclenchent automatiquement GitHub Actions:
 
 ---
 
-## 📄 Licence
+## License
 
 Private — Utilisation interne exclusive au clan VOLKZ.
 
@@ -314,9 +319,9 @@ Sans licence valide, l'utilisation de ce logiciel n'est pas autorisée.
 
 ---
 
-## 📦 Installateurs
+## Installers
 
-Des installateurs automatiques sont disponibles pour faciliter l'installation et la désinstallation sur Windows et macOS.
+Automatic installers are available to simplify installation and uninstallation on Windows and macOS.
 
 ### Windows
 
@@ -324,7 +329,7 @@ L'installateur Windows inclut:
 - Installation automatique dans Program Files
 - Création de raccourcis (Bureau, Menu Démarrer)
 - Option de lancement au démarrage
-- Support de désinstallation complète via Panneau de configuration
+Full uninstall support via Control Panel
 - Réparation automatique en cas de réinstallation
 
 **Construction de l'installateur Windows:**
@@ -343,7 +348,7 @@ L'installateur sera généré dans `installer/windows/output/` sous le nom `VLKL
 
 Le package macOS inclut:
 - Installation standard dans le dossier Applications
-- Support de désinstallation via script dédié
+Uninstall support via dedicated script
 - Pages de bienvenue et de conclusion personnalisées
 - Informations de licence intégrées
 
@@ -375,7 +380,7 @@ Le package sera généré dans `installer/macos/output/` sous le nom `VLKLaunche
 
 ## 🤝 Support
 
-Pour toute question ou problème, contactez **yolezz**:
+For any questions or issues, contact **yolezz**:
 
 - **Discord**: yolezz
 - **Email**: yolezz.secret@gmail.com

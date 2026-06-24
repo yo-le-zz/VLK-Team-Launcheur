@@ -81,7 +81,4 @@ installer/windows/*.exe
 *.tmp
 *.bak
 *.cache
-
-# Devin specific
-.devin/
-
+.blackboxrules

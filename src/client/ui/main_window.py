@@ -118,9 +118,8 @@ class MainWindow(QMainWindow):
             ("💬  CHAT",       1),
             ("👥  MEMBRES",    2),
             ("⚙️  PROFIL",     3),
+            ("🏆  RANKINGS",   4),
         ]
-        if role in ("admin", "superadmin"):
-            nav_items.append(("🏆  RANKINGS", 4))
         if role in ("admin", "superadmin"):
             nav_items.append(("🛡  ADMIN",    5))
 

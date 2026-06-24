@@ -1,5 +1,5 @@
 """VLK Launcher — Home Panel"""
-import subprocess, sys, platform
+import subprocess, sys, platform, os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QFrame, QSpacerItem, QSizePolicy
@@ -156,7 +156,67 @@ class HomePanel(QWidget):
         card = AnnouncementCard(ann)
         self.ann_layout.insertWidget(0, card)
 
+    def _check_roblox_installed(self):
+        """Check if Roblox is installed on the system."""
+        if platform.system() == "Windows":
+            # Check common Windows installation paths
+            roblox_paths = [
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Roblox"),
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "Roblox"),
+                os.path.join(os.environ.get("PROGRAMFILES", ""), "Roblox"),
+                os.path.join(os.environ.get("PROGRAMFILES(X86)", ""), "Roblox"),
+            ]
+            for path in roblox_paths:
+                if os.path.exists(path):
+                    return True
+            # Also check for RobloxPlayerLauncher.exe
+            for path in roblox_paths:
+                launcher = os.path.join(path, "RobloxPlayerLauncher.exe")
+                if os.path.exists(launcher):
+                    return True
+            return False
+        elif platform.system() == "Darwin":
+            # Check macOS Applications folder
+            mac_paths = [
+                "/Applications/Roblox.app",
+                os.path.expanduser("~/Applications/Roblox.app"),
+            ]
+            for path in mac_paths:
+                if os.path.exists(path):
+                    return True
+            return False
+        else:
+            # Linux - check for common wine installation or flatpak
+            linux_paths = [
+                os.path.expanduser("~/.wine/drive_c/Program Files/Roblox"),
+                os.path.expanduser("~/.local/share/applications/roblox-player.desktop"),
+            ]
+            for path in linux_paths:
+                if os.path.exists(path):
+                    return True
+            # Check if xdg-open can handle roblox:// protocol
+            try:
+                result = subprocess.run(["xdg-mime", "query", "default", "x-scheme-handler/roblox"], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0 and result.stdout.strip():
+                    return True
+            except Exception:
+                pass
+            return False
+
     def _launch_roblox(self):
+        # Check if Roblox is installed
+        if not self._check_roblox_installed():
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self, 
+                "Roblox Not Detected",
+                "Roblox does not appear to be installed on your system.\n\n"
+                "Please install Roblox from https://www.roblox.com/download\n"
+                "Then try launching again."
+            )
+            return
+        
         self.play_btn.setEnabled(False)
         self.play_btn.setText("LAUNCHING...")
         try:
@@ -167,7 +227,12 @@ class HomePanel(QWidget):
             else:
                 subprocess.Popen(["xdg-open", ROBLOX_GAME_URL])
         except Exception as e:
-            pass
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self, 
+                "Launch Failed",
+                f"Failed to launch Roblox:\n{str(e)}"
+            )
         QTimer.singleShot(3000, self._reset_play_btn)
 
     def _reset_play_btn(self):

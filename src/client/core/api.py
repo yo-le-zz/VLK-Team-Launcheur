@@ -1,6 +1,5 @@
 """VLK Launcher — HTTP + WebSocket client core"""
 import json
-import asyncio
 import threading
 import requests
 import os
@@ -10,29 +9,27 @@ from typing import Callable, Optional
 
 class WSSignalDispatcher:
     """Dispatches WebSocket callbacks using a thread-safe queue."""
-    
+
     def __init__(self, parent=None):
-        self._callbacks = {}
-        self._queue = queue.Queue()
+        self._callbacks: dict[str, list[Callable]] = {}
+        self._queue: "queue.Queue[tuple[str, dict]]" = queue.Queue()
         self._timer_callback = None
         self._main_thread_id = threading.get_ident()
-    
+
     def register_callback(self, event_type: str, callback: Callable):
-        if event_type not in self._callbacks:
-            self._callbacks[event_type] = []
-        self._callbacks[event_type].append(callback)
-    
+        self._callbacks.setdefault(event_type, []).append(callback)
+
     def set_timer_callback(self, callback):
         """Set a QTimer.singleShot callback for thread safety."""
         self._timer_callback = callback
-    
+
     def dispatch(self, event_type: str, data: dict):
         """Called from background thread, queues the event for main thread processing."""
         self._queue.put((event_type, data))
         # Schedule processing in main thread
         if self._timer_callback:
             self._timer_callback(self._process_queue)
-    
+
     def _process_queue(self):
         """Process queued events in main thread."""
         try:
@@ -41,7 +38,7 @@ class WSSignalDispatcher:
                 self._handle_message(event_type, data)
         except queue.Empty:
             pass
-    
+
     def _handle_message(self, event_type: str, data: dict):
         """Called in main thread."""
         for cb in self._callbacks.get(event_type, []):
@@ -61,54 +58,71 @@ class VLKApiClient:
         self.base_url = base_url.rstrip("/")
         self.token: Optional[str] = None
         self.user: Optional[dict] = None
+
         self._ws = None
         self._ws_thread: Optional[threading.Thread] = None
         self._ws_callbacks: dict[str, list[Callable]] = {}
         self._running = False
+
         self._cache_file = os.path.join(os.path.expanduser("~"), ".vlk_cache.json")
-        self._encryption_key: Optional[str] = None  # Derived from user password
+
+        # Derived from user password (salt). If present, cache is encrypted and needs unlocking.
+        self._encryption_key: Optional[str] = None
+        self._password_unlocked: bool = False
+
         self._main_thread_id = threading.get_ident()
         self._ws_dispatcher: Optional[WSSignalDispatcher] = None
+
         self._load_cached_session()
 
     def _load_cached_session(self):
         """Load cached token and user data from file."""
         try:
-            if os.path.exists(self._cache_file):
-                with open(self._cache_file, 'r') as f:
-                    data = json.load(f)
-                    # Store encrypted data if present
-                    if data.get("encrypted"):
-                        self._encryption_key = data.get("encryption_key")
-                        # Data will be decrypted when password is provided
-                        self.token = None  # Will decrypt on successful login
-                        self.user = None
-                    else:
-                        # Legacy unencrypted format
-                        self.token = data.get("token")
-                        self.user = data.get("user")
-        except Exception:
-            pass
+            if not os.path.exists(self._cache_file):
+                return
+
+            with open(self._cache_file, "r") as f:
+                data = json.load(f)
+
+            if data.get("encrypted"):
+                self._encryption_key = data.get("encryption_key")
+                self.token = None
+                self.user = None
+                self._password_unlocked = False
+            else:
+                # Legacy unencrypted format
+                self.token = data.get("token")
+                self.user = data.get("user")
+                self._password_unlocked = True
+        except Exception as e:
+            print(f"Error loading cached session: {e}")
 
     def _save_cached_session(self, password: Optional[str] = None):
         """Save token and user data to file with optional encryption."""
         try:
-            if self.token and self.user:
-                if password:
-                    # Use password-based encryption
-                    from src.client.core.crypto import CryptoManager
-                    crypto = CryptoManager(password)
-                    data = {
-                        "encrypted": True,
-                        "encryption_key": crypto.get_salt(),
-                        "token": crypto.encrypt(self.token),
-                        "user": crypto.encrypt(json.dumps(self.user))
-                    }
-                else:
-                    # Unencrypted (not recommended)
-                    data = {"token": self.token, "user": self.user}
-                with open(self._cache_file, 'w') as f:
-                    json.dump(data, f)
+            if not (self.token and self.user):
+                return
+
+            if password:
+                # Use password-based encryption
+                from src.client.core.crypto import CryptoManager
+
+                crypto = CryptoManager(password)
+                data = {
+                    "encrypted": True,
+                    "encryption_key": crypto.get_salt(),
+                    "token": crypto.encrypt(self.token),
+                    "user": crypto.encrypt(json.dumps(self.user)),
+                    "unlocked": True,
+                }
+                self._password_unlocked = True
+            else:
+                # Unencrypted (not recommended)
+                data = {"token": self.token, "user": self.user}
+                self._password_unlocked = True
+
+            with open(self._cache_file, "w") as f:
+                json.dump(data, f)
         except Exception:
             pass
 
@@ -117,14 +131,23 @@ class VLKApiClient:
         try:
             if not self._encryption_key:
                 return False
+
             from src.client.core.crypto import CryptoManager
+
             crypto = CryptoManager.from_password_and_salt(password, self._encryption_key)
-            with open(self._cache_file, 'r') as f:
+            with open(self._cache_file, "r") as f:
                 data = json.load(f)
-            self.token = crypto.decrypt(data.get("token", ""))
+
+            token = crypto.decrypt(data.get("token", ""))
             user_json = crypto.decrypt(data.get("user", ""))
-            self.user = json.loads(user_json) if user_json else None
-            return bool(self.token and self.user)
+            user = json.loads(user_json) if user_json else None
+
+            if token and user:
+                self.token = token
+                self.user = user
+                self._password_unlocked = True
+                return True
+            return False
         except Exception:
             return False
 
@@ -136,6 +159,11 @@ class VLKApiClient:
         except Exception:
             pass
 
+        self.token = None
+        self.user = None
+        self._encryption_key = None
+        self._password_unlocked = False
+
     def _headers(self) -> dict:
         h = {"Content-Type": "application/json"}
         if self.token:
@@ -143,43 +171,66 @@ class VLKApiClient:
         return h
 
     def _post(self, path: str, data: dict) -> dict:
-        r = requests.post(f"{self.base_url}{path}", json=data, headers=self._headers(), timeout=10)
+        r = requests.post(
+            f"{self.base_url}{path}", json=data, headers=self._headers(), timeout=10
+        )
         r.raise_for_status()
         return r.json()
 
     def _get(self, path: str) -> dict | list:
-        r = requests.get(f"{self.base_url}{path}", headers=self._headers(), timeout=10)
+        r = requests.get(
+            f"{self.base_url}{path}", headers=self._headers(), timeout=10
+        )
         r.raise_for_status()
         return r.json()
 
     def _patch(self, path: str, data: dict) -> dict:
-        r = requests.patch(f"{self.base_url}{path}", json=data, headers=self._headers(), timeout=10)
+        r = requests.patch(
+            f"{self.base_url}{path}", json=data, headers=self._headers(), timeout=10
+        )
         r.raise_for_status()
         return r.json()
 
     # AUTH
-    def register(self, license_key: str, username: str, password: str, roblox_username: str = "") -> dict:
-        res = self._post("/auth/register", {"license_key": license_key, "username": username, "password": password, "roblox_username": roblox_username})
+    def register(
+        self,
+        license_key: str,
+        username: str,
+        password: str,
+        roblox_username: str = "",
+    ) -> dict:
+        res = self._post(
+            "/auth/register",
+            {
+                "license_key": license_key,
+                "username": username,
+                "password": password,
+                "roblox_username": roblox_username,
+            },
+        )
         self.token = res["token"]
         self.user = res["user"]
-        self._save_cached_session(password=password)  # Encrypt with password
+        self._save_cached_session(password=password)
         return res
 
     def login(self, username: str, password: str) -> dict:
-        # First try to decrypt cached session if it exists
-        if self._encryption_key and self._decrypt_cached_session(password):
-            # Verify token is still valid
-            try:
-                self.user = self._get("/auth/me")
+        # Password-only login: unlock encrypted cache and verify via /auth/me
+        if self._encryption_key and not username:
+            if self._decrypt_cached_session(password):
+                # Verify token is still valid
+                user_data = self._get("/auth/me")
+                self._password_unlocked = True
+                self.user = user_data
                 return {"token": self.token, "user": self.user}
-            except Exception:
-                # Token invalid, proceed with normal login
-                pass
-        
+
+        # Normal login flow (requires username)
+        if not username:
+            raise ValueError("Username required for login")
+
         res = self._post("/auth/login", {"username": username, "password": password})
         self.token = res["token"]
         self.user = res["user"]
-        self._save_cached_session(password=password)  # Encrypt with password
+        self._save_cached_session(password=password)
         return res
 
     def logout(self):
@@ -192,6 +243,14 @@ class VLKApiClient:
         res = self._patch("/auth/profile", kwargs)
         self.user = res
         return res
+
+    def delete_account(self) -> dict:
+        """Delete user account (frees license for reuse)."""
+        r = requests.delete(
+            f"{self.base_url}/auth/delete-account", headers=self._headers(), timeout=10
+        )
+        r.raise_for_status()
+        return r.json()
 
     def get_me(self) -> dict:
         self.user = self._get("/auth/me")
@@ -222,7 +281,9 @@ class VLKApiClient:
         if not self.token:
             return
         self._running = True
-        self._ws_thread = threading.Thread(target=self._ws_loop, daemon=True, name="WebSocketThread")
+        self._ws_thread = threading.Thread(
+            target=self._ws_loop, daemon=True, name="WebSocketThread"
+        )
         self._ws_thread.start()
 
     def disconnect_ws(self):
@@ -235,6 +296,7 @@ class VLKApiClient:
 
     def _ws_loop(self):
         import websocket as ws_lib
+
         ws_url = self.base_url.replace("http://", "ws://").replace("https://", "wss://")
         url = f"{ws_url}/ws/{self.token}"
 
@@ -242,7 +304,7 @@ class VLKApiClient:
             try:
                 data = json.loads(message)
                 t = data.get("type", "")
-                # Use dispatcher for thread-safe callback
+
                 if self._ws_dispatcher:
                     self._ws_dispatcher.dispatch(t, data)
                 else:
@@ -256,14 +318,18 @@ class VLKApiClient:
 
         def on_error(ws, error):
             if self._ws_dispatcher:
-                self._ws_dispatcher.dispatch("error", {"type": "error", "error": str(error)})
+                self._ws_dispatcher.dispatch(
+                    "error", {"type": "error", "error": str(error)}
+                )
             else:
                 for cb in self._ws_callbacks.get("error", []):
                     cb({"type": "error", "error": str(error)})
 
         def on_close(ws, *args):
             if self._running:
-                import time; time.sleep(3)
+                import time
+
+                time.sleep(3)
                 self._ws_loop()
 
         def on_open(ws):
@@ -274,7 +340,13 @@ class VLKApiClient:
                 for cb in self._ws_callbacks.get("connected", []):
                     cb({"type": "connected"})
 
-        wsa = ws_lib.WebSocketApp(url, on_message=on_message, on_error=on_error, on_close=on_close, on_open=on_open)
+        wsa = ws_lib.WebSocketApp(
+            url,
+            on_message=on_message,
+            on_error=on_error,
+            on_close=on_close,
+            on_open=on_open,
+        )
         wsa.run_forever(ping_interval=30)
 
     def send_ws(self, data: dict):
@@ -286,3 +358,4 @@ class VLKApiClient:
 
     def send_chat(self, content: str):
         self.send_ws({"type": "chat", "content": content})
+

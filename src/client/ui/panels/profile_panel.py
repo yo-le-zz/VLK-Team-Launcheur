@@ -1,24 +1,11 @@
 """VLK Launcher — Profile Panel"""
+import requests
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFrame, QMessageBox, QSizePolicy, QFileDialog
 )
-from PySide6.QtCore import Qt, QThread, QObject, Signal
+from PySide6.QtCore import Qt, QTimer
 from src.client.ui.theme import *
-
-
-class SaveWorker(QObject):
-    done = Signal(dict)
-    error = Signal(str)
-    def __init__(self, fn, kwargs):
-        super().__init__(None)  # No parent to avoid threading issues
-        self._fn = fn
-        self._kwargs = kwargs
-    def run(self):
-        try:
-            self.done.emit(self._fn(**self._kwargs))
-        except Exception as e:
-            self.error.emit(str(e))
 
 
 class ProfilePanel(QWidget):
@@ -40,8 +27,10 @@ class ProfilePanel(QWidget):
         # Info panel
         panel = QFrame()
         panel.setObjectName("panel")
-        panel.setFixedWidth(480)
         panel_layout = QVBoxLayout(panel)
+        # Let the panel expand horizontally (no fixed width)
+        panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
         panel_layout.setContentsMargins(24, 24, 24, 24)
         panel_layout.setSpacing(14)
 
@@ -142,6 +131,26 @@ class ProfilePanel(QWidget):
         self.status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         panel_layout.addWidget(self.status_lbl)
 
+        # Delete account button
+        delete_btn = QPushButton("🗑  DELETE ACCOUNT")
+        delete_btn.setFixedHeight(42)
+        delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        delete_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {STATUS_RED}22;
+                color: {STATUS_RED};
+                border: 1px solid {STATUS_RED}55;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 700;
+            }}
+            QPushButton:hover {{
+                background: {STATUS_RED}33;
+            }}
+        """)
+        delete_btn.clicked.connect(self._delete_account)
+        panel_layout.addWidget(delete_btn)
+
         outer.addWidget(panel)
 
     def _save(self, btn: QPushButton):
@@ -156,25 +165,22 @@ class ProfilePanel(QWidget):
             return
         btn.setEnabled(False)
         btn.setText("SAVING...")
-        self._thread = QThread(None)  # No parent to avoid threading issues
-        self._thread.setObjectName("ProfileSaveThread")
-        self._worker = SaveWorker(self.api.update_profile, kwargs)
-        self._worker.moveToThread(self._thread)
-        self._thread.started.connect(self._worker.run)
-        # Use QueuedConnection for thread-safe signal delivery
-        self._worker.done.connect(lambda _: self._on_saved(btn), Qt.ConnectionType.QueuedConnection)
-        self._worker.error.connect(lambda e: self._on_error(btn, e), Qt.ConnectionType.QueuedConnection)
-        self._worker.done.connect(self._thread.quit, Qt.ConnectionType.QueuedConnection)
-        self._worker.error.connect(self._thread.quit, Qt.ConnectionType.QueuedConnection)
-        self._thread.start()
+        # Run synchronously to avoid threading issues
+        try:
+            self.api.update_profile(**kwargs)
+            self._on_saved(btn)
+        except Exception as e:
+            self._on_error(btn, str(e))
 
     def _on_saved(self, btn):
+        """Handle successful save."""
         btn.setEnabled(True)
         btn.setText("SAVE CHANGES")
         self.status_lbl.setText("✓  Profile updated")
         self.status_lbl.setStyleSheet(f"color: {STATUS_GREEN}; font-size: 12px;")
 
     def _on_error(self, btn, error):
+        """Handle save error."""
         btn.setEnabled(True)
         btn.setText("SAVE CHANGES")
         self.status_lbl.setText(f"✗  {error}")
@@ -191,10 +197,62 @@ class ProfilePanel(QWidget):
         if not file_path:
             return
         
-        # For now, just set the file path as a local file URL
-        # In a real implementation, you'd upload to a server and get a URL
-        import os
-        if os.path.exists(file_path):
-            self.avatar_edit.setText(f"file://{file_path}")
-            self.status_lbl.setText("✓  Image selected (local file)")
+        # Upload the file to server
+        try:
+            import os
+            import mimetypes
+            if os.path.exists(file_path):
+                # Detect MIME type
+                mime_type, _ = mimetypes.guess_type(file_path)
+                if not mime_type or not mime_type.startswith('image/'):
+                    mime_type = 'image/png'
+                
+                with open(file_path, 'rb') as f:
+                    files = {'file': (os.path.basename(file_path), f, mime_type)}
+                    headers = {"Authorization": f"Bearer {self.api.token}"}
+                    response = requests.post(f"{self.api.base_url}/auth/upload-avatar", files=files, headers=headers, timeout=30)
+                    response.raise_for_status()
+                    result = response.json()
+                    self.avatar_edit.setText(result.get("avatar_url", ""))
+                    self.status_lbl.setText("✓  Avatar uploaded successfully")
+                    self.status_lbl.setStyleSheet(f"color: {STATUS_GREEN}; font-size: 12px;")
+        except Exception as e:
+            self.status_lbl.setText(f"✗  Upload failed: {str(e)}")
+            self.status_lbl.setStyleSheet(f"color: {STATUS_RED}; font-size: 12px;")
+
+    def _delete_account(self):
+        """Delete user account with confirmation."""
+        reply = QMessageBox.question(
+            self, 
+            "Delete Account",
+            "Are you sure you want to delete your account?\n\nThis will:\n- Delete your user account\n- Free your license for reuse\n- This action cannot be undone",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        try:
+            result = self.api.delete_account()
+            self.status_lbl.setText("✓  Account deleted successfully")
             self.status_lbl.setStyleSheet(f"color: {STATUS_GREEN}; font-size: 12px;")
+            
+            # Logout and return to login screen
+            self.api.logout()
+            self.api.disconnect_ws()
+            
+            # Close main window and show login
+            from PySide6.QtWidgets import QApplication
+            main_window = self.window()
+            if main_window:
+                main_window.close()
+            
+            # Show login window
+            from src.client.ui.login_window import LoginWindow
+            login_window = LoginWindow(self.api)
+            login_window.show()
+            
+        except Exception as e:
+            self.status_lbl.setText(f"✗  Delete failed: {str(e)}")
+            self.status_lbl.setStyleSheet(f"color: {STATUS_RED}; font-size: 12px;")

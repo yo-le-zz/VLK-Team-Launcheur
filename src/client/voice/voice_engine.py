@@ -18,6 +18,7 @@ except ImportError:
     PYAUDIO_OK = False
 
 # Lazy import opuslib to avoid crash on startup if library is missing
+# Note: opuslib has a syntax warning about "is not" vs "!=" - this is a third-party library issue and can be ignored
 OPUS_OK = False
 def _get_opuslib():
     global OPUS_OK
@@ -86,30 +87,76 @@ class VoiceEngine:
             return False, "opuslib not installed. Run: pip install opuslib"
 
         try:
-            self._pa = pyaudio.PyAudio()
-            self._enc = opuslib.Encoder(SAMPLE_RATE, CHANNELS, opuslib.APPLICATION_VOIP)
-            self._dec = opuslib.Decoder(SAMPLE_RATE, CHANNELS)
+            # Suppress ALSA/Jack warnings by redirecting stderr
+            import sys
+            import io
+            old_stderr = sys.stderr
+            sys.stderr = io.StringIO()
+            
+            try:
+                self._pa = pyaudio.PyAudio()
+                self._enc = opuslib.Encoder(SAMPLE_RATE, CHANNELS, opuslib.APPLICATION_VOIP)
+                self._dec = opuslib.Decoder(SAMPLE_RATE, CHANNELS)
 
-            self._in_stream = self._pa.open(
-                format=FORMAT_PA,
-                channels=CHANNELS,
-                rate=SAMPLE_RATE,
-                input=True,
-                frames_per_buffer=CHUNK_FRAMES,
-            )
-            self._out_stream = self._pa.open(
-                format=FORMAT_PA,
-                channels=CHANNELS,
-                rate=SAMPLE_RATE,
-                output=True,
-                frames_per_buffer=CHUNK_FRAMES,
-            )
-            self._running = True
-            self._capture_thread = threading.Thread(target=self._capture_loop, daemon=True, name="VoiceCaptureThread")
-            self._playback_thread = threading.Thread(target=self._playback_loop, daemon=True, name="VoicePlaybackThread")
-            self._capture_thread.start()
-            self._playback_thread.start()
-            return True, ""
+                # Try to get default devices, with fallbacks
+                try:
+                    input_device = None
+                    output_device = None
+                    
+                    # Try to find working devices
+                    for i in range(self._pa.get_device_count()):
+                        info = self._pa.get_device_info_by_index(i)
+                        if info['maxInputChannels'] > 0 and input_device is None:
+                            input_device = i
+                        if info['maxOutputChannels'] > 0 and output_device is None:
+                            output_device = i
+                    
+                    # Open input stream with device selection
+                    self._in_stream = self._pa.open(
+                        format=FORMAT_PA,
+                        channels=CHANNELS,
+                        rate=SAMPLE_RATE,
+                        input=True,
+                        input_device_index=input_device,
+                        frames_per_buffer=CHUNK_FRAMES,
+                    )
+                    
+                    # Open output stream with device selection
+                    self._out_stream = self._pa.open(
+                        format=FORMAT_PA,
+                        channels=CHANNELS,
+                        rate=SAMPLE_RATE,
+                        output=True,
+                        output_device_index=output_device,
+                        frames_per_buffer=CHUNK_FRAMES,
+                    )
+                except Exception as device_error:
+                    # Fallback to default devices if specific device selection fails
+                    self._in_stream = self._pa.open(
+                        format=FORMAT_PA,
+                        channels=CHANNELS,
+                        rate=SAMPLE_RATE,
+                        input=True,
+                        frames_per_buffer=CHUNK_FRAMES,
+                    )
+                    self._out_stream = self._pa.open(
+                        format=FORMAT_PA,
+                        channels=CHANNELS,
+                        rate=SAMPLE_RATE,
+                        output=True,
+                        frames_per_buffer=CHUNK_FRAMES,
+                    )
+                
+                self._running = True
+                self._capture_thread = threading.Thread(target=self._capture_loop, daemon=True, name="VoiceCaptureThread")
+                self._playback_thread = threading.Thread(target=self._playback_loop, daemon=True, name="VoicePlaybackThread")
+                self._capture_thread.start()
+                self._playback_thread.start()
+                return True, ""
+            finally:
+                # Restore stderr
+                sys.stderr = old_stderr
+                
         except Exception as e:
             self.stop()
             return False, str(e)

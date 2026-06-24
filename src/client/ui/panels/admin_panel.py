@@ -260,16 +260,26 @@ class StatsTab(QWidget):
             return self._api("GET", "/admin/stats")
 
         def done(data):
-            for k, card in self._cards.items():
-                card.set_value(data.get(k, "—"))
-            self._refresh_btn.setEnabled(True)
-            self._refresh_btn.setText("↺  Actualiser")
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._do_load_done(data))
 
         def err(e):
-            self._refresh_btn.setEnabled(True)
-            self._refresh_btn.setText("↺  Actualiser")
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._do_load_err())
 
         _run(self, fetch, done, err)
+
+    def _do_load_done(self, data):
+        """Handle successful stats load (called in main thread)."""
+        for k, card in self._cards.items():
+            card.set_value(data.get(k, "—"))
+        self._refresh_btn.setEnabled(True)
+        self._refresh_btn.setText("↺  Actualiser")
+
+    def _do_load_err(self):
+        """Handle stats load error (called in main thread)."""
+        self._refresh_btn.setEnabled(True)
+        self._refresh_btn.setText("↺  Actualiser")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -339,7 +349,15 @@ class UsersTab(QWidget):
         def fetch():
             return self._api("GET", "/admin/users")
 
-        _run(self, fetch, self._populate, lambda e: self._status.setText(f"Erreur : {e}"))
+        def done(data):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._populate(data))
+
+        def err(e):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._status.setText(f"Erreur : {e}"))
+
+        _run(self, fetch, done, err)
 
     def _populate(self, users: list):
         self._users = users
@@ -464,15 +482,29 @@ class UsersTab(QWidget):
         def do():
             return self._api("DELETE", f"/admin/users/{uid}")
 
-        _run(self, do, lambda _: self.load(),
-             lambda e: self._status.setText(f"Erreur : {e}"))
+        def done(_):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self.load())
+
+        def err(e):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._status.setText(f"Erreur : {e}"))
+
+        _run(self, do, done, err)
 
     def _patch_user(self, uid: int, data: dict):
         def do():
             return self._api("PATCH", f"/admin/users/{uid}", data)
 
-        _run(self, do, lambda _: self.load(),
-             lambda e: self._status.setText(f"Erreur : {e}"))
+        def done(_):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self.load())
+
+        def err(e):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._status.setText(f"Erreur : {e}"))
+
+        _run(self, do, done, err)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -614,7 +646,15 @@ class LicensesTab(QWidget):
         def fetch():
             return self._api("GET", "/admin/licenses")
 
-        _run(self, fetch, self._populate, lambda e: self._status.setText(f"Erreur : {e}"))
+        def done(data):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._populate(data))
+
+        def err(e):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._status.setText(f"Erreur : {e}"))
+
+        _run(self, fetch, done, err)
 
     def _populate(self, lics: list):
         self._lics = lics
@@ -696,12 +736,21 @@ class LicensesTab(QWidget):
             return self._api("POST", "/admin/licenses/generate", {"count": count, "role": role})
 
         def done(data):
-            generated = data.get("generated", [])
-            self._gen_result.setText(f"✓ {len(generated)} créée(s)")
-            QTimer.singleShot(3000, lambda: self._gen_result.setText(""))
-            self.load()
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._do_generate_done(data))
 
-        _run(self, do, done, lambda e: self._status.setText(f"Erreur : {e}"))
+        def err(e):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._status.setText(f"Erreur : {e}"))
+
+        _run(self, do, done, err)
+
+    def _do_generate_done(self, data):
+        """Handle successful license generation (called in main thread)."""
+        generated = data.get("generated", [])
+        self._gen_result.setText(f"✓ {len(generated)} créée(s)")
+        QTimer.singleShot(3000, lambda: self._gen_result.setText(""))
+        self.load()
 
     def _copy(self, key: str):
         from PySide6.QtWidgets import QApplication
@@ -711,8 +760,15 @@ class LicensesTab(QWidget):
         def do():
             return self._api("PATCH", f"/admin/licenses/{key}", {"active": active})
 
-        _run(self, do, lambda _: self.load(),
-             lambda e: self._status.setText(f"Erreur : {e}"))
+        def done(_):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self.load())
+
+        def err(e):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._status.setText(f"Erreur : {e}"))
+
+        _run(self, do, done, err)
 
     def _delete(self, key: str):
         r = QMessageBox.question(
@@ -726,8 +782,15 @@ class LicensesTab(QWidget):
         def do():
             return self._api("DELETE", f"/admin/licenses/{key}")
 
-        _run(self, do, lambda _: self.load(),
-             lambda e: self._status.setText(f"Erreur : {e}"))
+        def done(_):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self.load())
+
+        def err(e):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._status.setText(f"Erreur : {e}"))
+
+        _run(self, do, done, err)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -856,7 +919,11 @@ class AnnouncementsTab(QWidget):
         def fetch():
             return self._api("GET", "/admin/announcements")
 
-        _run(self, fetch, self._populate)
+        def done(data):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._populate(data))
+
+        _run(self, fetch, done)
 
     def _populate(self, anns: list):
         self._table.setRowCount(0)
@@ -897,14 +964,23 @@ class AnnouncementsTab(QWidget):
             return self._api("POST", "/admin/announcements", {"title": title, "body": body, "priority": prio})
 
         def done(_):
-            self._ann_title.clear()
-            self._ann_body.clear()
-            self._ann_status.setText("✓  Annonce publiée")
-            self._ann_status.setStyleSheet(f"font-size: 11px; color: {STATUS_GREEN};")
-            QTimer.singleShot(3000, lambda: self._ann_status.setText(""))
-            self.load()
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._do_post_ann_done())
 
-        _run(self, do, done, lambda e: self._ann_status.setText(f"Erreur : {e}"))
+        def err(e):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._ann_status.setText(f"Erreur : {e}"))
+
+        _run(self, do, done, err)
+
+    def _do_post_ann_done(self):
+        """Handle successful announcement post (called in main thread)."""
+        self._ann_title.clear()
+        self._ann_body.clear()
+        self._ann_status.setText("✓  Annonce publiée")
+        self._ann_status.setStyleSheet(f"font-size: 11px; color: {STATUS_GREEN};")
+        QTimer.singleShot(3000, lambda: self._ann_status.setText(""))
+        self.load()
 
     def _broadcast(self):
         msg = self._bcast_msg.text().strip()
@@ -915,18 +991,31 @@ class AnnouncementsTab(QWidget):
             return self._api("POST", "/admin/broadcast", {"content": msg})
 
         def done(_):
-            self._bcast_msg.clear()
-            self._ann_status.setText("✓  Message diffusé")
-            self._ann_status.setStyleSheet(f"font-size: 11px; color: {STATUS_GREEN};")
-            QTimer.singleShot(3000, lambda: self._ann_status.setText(""))
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._do_broadcast_done())
 
-        _run(self, do, done, lambda e: self._ann_status.setText(f"Erreur : {e}"))
+        def err(e):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._ann_status.setText(f"Erreur : {e}"))
+
+        _run(self, do, done, err)
+
+    def _do_broadcast_done(self):
+        """Handle successful broadcast (called in main thread)."""
+        self._bcast_msg.clear()
+        self._ann_status.setText("✓  Message diffusé")
+        self._ann_status.setStyleSheet(f"font-size: 11px; color: {STATUS_GREEN};")
+        QTimer.singleShot(3000, lambda: self._ann_status.setText(""))
 
     def _delete_ann(self, ann_id: int):
         def do():
             return self._api("DELETE", f"/admin/announcements/{ann_id}")
 
-        _run(self, do, lambda _: self.load())
+        def done(_):
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self.load())
+
+        _run(self, do, done)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -937,7 +1026,10 @@ class AdminPanel(QWidget):
     def __init__(self, api, parent=None):
         super().__init__(parent)
         self.api         = api
-        self._master_pw  = ""
+        # Master password from login (so we don't ask again).
+        # It is set from LoginWindow when user authenticates.
+        self._master_pw  = getattr(api, "master_password", "")
+
         self._authed     = False
         self._build_ui()
 
@@ -947,7 +1039,8 @@ class AdminPanel(QWidget):
         """Sync HTTP call with X-Master-Password header."""
         headers = {
             "Content-Type": "application/json",
-            "X-Master-Password": self._master_pw,
+            # Server expects header `x_master_password` (FastAPI lowercases header keys)
+            "x-master-password": self._master_pw,
         }
         url = f"{self.api.base_url}{path}"
         r = getattr(_requests, method.lower())(url, json=data, headers=headers, timeout=10)
@@ -1055,30 +1148,48 @@ class AdminPanel(QWidget):
             return self._api("GET", "/admin/stats")
 
         def ok(_):
-            self._authed = True
-            self._auth_lbl.setText("🟢  Authentifié")
-            self._auth_lbl.setStyleSheet(f"font-size: 11px; color: {STATUS_GREEN}; font-weight: 700;")
-            self._auth_btn.setText("🔒  Se déconnecter")
-            self._auth_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: {STATUS_GREEN}22; color: {STATUS_GREEN};
-                    border: 1px solid {STATUS_GREEN}55; border-radius: 6px;
-                    font-size: 11px; font-weight: 700; padding: 0 14px;
-                }}
-                QPushButton:hover {{ background: {STATUS_GREEN}33; }}
-            """)
-            self._auth_btn.clicked.disconnect()
-            self._auth_btn.clicked.connect(self._logout)
-            self._load_all()
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._do_auth_success())
 
         def fail(e):
-            self._master_pw = prev
-            QMessageBox.warning(self, "Erreur d'authentification",
-                f"Mot de passe incorrect ou serveur inaccessible.\n\n{e}")
+            # Use QTimer to ensure UI updates run in main thread
+            QTimer.singleShot(0, lambda: self._do_auth_fail(e, prev))
 
         _run(self, test, ok, fail)
 
+    def _do_auth_success(self):
+        """Handle successful authentication (called in main thread)."""
+        self._authed = True
+        self._auth_lbl.setText("🟢  Authentifié")
+        self._auth_lbl.setStyleSheet(f"font-size: 11px; color: {STATUS_GREEN}; font-weight: 700;")
+        self._auth_btn.setText("🔒  Se déconnecter")
+        self._auth_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {STATUS_GREEN}22; color: {STATUS_GREEN};
+                border: 1px solid {STATUS_GREEN}55; border-radius: 6px;
+                font-size: 11px; font-weight: 700; padding: 0 14px;
+            }}
+            QPushButton:hover {{ background: {STATUS_GREEN}33; }}
+        """)
+        try:
+            self._auth_btn.clicked.disconnect()
+        except Exception:
+            pass
+        self._auth_btn.clicked.connect(self._logout)
+        self._load_all()
+
+    def _do_auth_fail(self, error: str, prev_pw: str):
+        """Handle authentication failure (called in main thread)."""
+        self._master_pw = prev_pw
+        QMessageBox.warning(self, "Erreur d'authentification",
+            f"Mot de passe incorrect ou serveur inaccessible.\n\n{error}")
+
     def _logout(self):
+        # Use QTimer to ensure UI updates run in main thread
+        QTimer.singleShot(0, self._do_logout)
+
+    def _do_logout(self):
+        """Handle logout (called in main thread)."""
         self._master_pw = ""
         self._authed    = False
         self._auth_lbl.setText("🔒  Non authentifié")
@@ -1092,10 +1203,18 @@ class AdminPanel(QWidget):
             }}
             QPushButton:hover {{ background: {STATUS_RED}33; }}
         """)
-        self._auth_btn.clicked.disconnect()
+        try:
+            self._auth_btn.clicked.disconnect()
+        except Exception:
+            pass
         self._auth_btn.clicked.connect(self._authenticate)
 
     def _load_all(self):
+        # Use QTimer to ensure UI updates run in main thread
+        QTimer.singleShot(0, self._do_load_all)
+
+    def _do_load_all(self):
+        """Load all admin tabs (called in main thread)."""
         self._tab_stats.load()
         self._tab_users.load()
         self._tab_lics.load()

@@ -4,24 +4,11 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QFrame, QComboBox, QHeaderView, QMessageBox
 )
-from PySide6.QtCore import Qt, QThread, QObject, Signal
+from PySide6.QtCore import Qt, QTimer
 from src.client.ui.theme import *
 
 RANKS = ["Recruit", "Member", "Veteran", "Elite", "Officer", "Commander", "Legend"]
 ROLES = ["user", "admin", "superadmin"]
-
-
-class AdminWorker(QObject):
-    done = Signal(object)
-    error = Signal(str)
-    def __init__(self, fn):
-        super().__init__(None)  # No parent to avoid threading issues
-        self._fn = fn
-    def run(self):
-        try:
-            self.done.emit(self._fn())
-        except Exception as e:
-            self.error.emit(str(e))
 
 
 class RankingPanel(QWidget):
@@ -69,29 +56,40 @@ class RankingPanel(QWidget):
     def _load_users(self):
         self.status_lbl.setText("Loading...")
         self.status_lbl.setStyleSheet(f"color: {TEXT_MUTED};")
-        self._thread = QThread(None)  # No parent to avoid threading issues
-        self._thread.setObjectName("RankingLoadThread")
-        self._worker = AdminWorker(self._fetch_users)
-        self._worker.moveToThread(self._thread)
-        self._thread.started.connect(self._worker.run)
-        # Use QueuedConnection for thread-safe signal delivery
-        self._worker.done.connect(self._on_users, Qt.ConnectionType.QueuedConnection)
-        self._worker.error.connect(lambda e: self.status_lbl.setText(f"Error: {e}"), Qt.ConnectionType.QueuedConnection)
-        self._worker.done.connect(self._thread.quit, Qt.ConnectionType.QueuedConnection)
-        self._worker.error.connect(self._thread.quit, Qt.ConnectionType.QueuedConnection)
-        self._thread.start()
+        # Run synchronously to avoid threading issues
+        try:
+            users = self._fetch_users()
+            self._on_users(users)
+        except Exception as e:
+            self._on_error(str(e))
 
     def _fetch_users(self):
+        user_role = self.api.user.get("role", "user")
+        headers = {"Authorization": f"Bearer {self.api.token}"}
+        
+        # Use public endpoint for normal users, admin endpoint for admins
+        if user_role in ("admin", "superadmin"):
+            # Server admin master check accepts: query param `password` OR header `x_master_password`
+            # We'll send it as header using the exact expected casing.
+            headers["x-master-password"] = self._get_master_pw()
+            endpoint = "/admin/users"
+        else:
+            endpoint = "/admin/users/public"
+        
         r = requests.get(
-            f"{self.api.base_url}/admin/users",
-            headers={"Authorization": f"Bearer {self.api.token}",
-                     "X-Master-Password": self._get_master_pw()},
+            f"{self.api.base_url}{endpoint}",
+            headers=headers,
             timeout=10
         )
         r.raise_for_status()
         return r.json()
 
     def _get_master_pw(self) -> str:
+        # Only prompt for master password if user is admin
+        user_role = self.api.user.get("role", "user")
+        if user_role not in ("admin", "superadmin"):
+            return ""
+        
         # For admin panel: prompt for master password once and cache
         if not hasattr(self, "_master_pw"):
             from PySide6.QtWidgets import QInputDialog
@@ -101,6 +99,21 @@ class RankingPanel(QWidget):
         return self._master_pw
 
     def _on_users(self, users: list):
+        # Make sure current user is always visible (some endpoints may return partial lists)
+        try:
+            self_id = str(self.api.user.get("id"))
+            if self_id and not any(str(u.get("id")) == self_id for u in users):
+                users = list(users)
+                users.append({
+                    "id": int(self_id) if str(self_id).isdigit() else self_id,
+                    "username": self.api.user.get("username"),
+                    "role": self.api.user.get("role", "user"),
+                    "rank": self.api.user.get("rank", "Recruit"),
+                    "active": self.api.user.get("active", True),
+                })
+        except Exception:
+            pass
+
         self._users = users
         self.table.setRowCount(0)
         for u in users:
@@ -144,6 +157,9 @@ class RankingPanel(QWidget):
         self.status_lbl.setText(f"{len(users)} users loaded")
         self.status_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
 
+    def _on_error(self, error: str):
+        self.status_lbl.setText(f"Error: {error}")
+
     def _promote(self, user_id: int, current_rank: str):
         idx = RANKS.index(current_rank) if current_rank in RANKS else 0
         next_rank = RANKS[min(idx + 1, len(RANKS) - 1)]
@@ -158,7 +174,7 @@ class RankingPanel(QWidget):
                 f"{self.api.base_url}/admin/users/{user_id}",
                 json=data,
                 headers={"Authorization": f"Bearer {self.api.token}",
-                         "X-Master-Password": self._master_pw if hasattr(self, "_master_pw") else ""},
+                         "x-master-password": self._master_pw if hasattr(self, "_master_pw") else ""},
                 timeout=10
             )
             r.raise_for_status()

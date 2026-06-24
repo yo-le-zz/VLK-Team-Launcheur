@@ -137,6 +137,30 @@ async def upload_avatar(file: UploadFile = File(...), creds: HTTPAuthorizationCr
     
     return {"avatar_url": data_url}
 
+@router.delete("/delete-account")
+async def delete_account(creds: HTTPAuthorizationCredentials = Depends(bearer), db: AsyncSession = Depends(get_db)):
+    """Delete user account but keep the license (free it for reuse)."""
+    payload = decode_token(creds.credentials)
+    if not payload:
+        raise HTTPException(401)
+    
+    result = await db.execute(select(User).where(User.id == int(payload["sub"])))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    # Free the license
+    lic_result = await db.execute(select(License).where(License.key == user.license_key))
+    license = lic_result.scalar_one_or_none()
+    if license:
+        license.used_by = ""
+    
+    # Delete the user
+    await db.delete(user)
+    await db.commit()
+    
+    return {"message": "Account deleted successfully"}
+
 def _user_dict(u: User) -> dict:
     return {
         "id": u.id,

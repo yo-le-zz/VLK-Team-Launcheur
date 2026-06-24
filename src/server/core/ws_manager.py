@@ -10,16 +10,35 @@ class ConnectionManager:
 
     async def connect(self, websocket: WebSocket, user_id: str, username: str, role: str):
         await websocket.accept()
-        self.connections[user_id] = {"ws": websocket, "username": username, "role": role}
+        # Keep avatar_url in memory for WS relays (chat + voice)
+        # Avatar_url comes from the HTTP login payload (user.avatar_url) -> token claims are limited,
+        # so we also accept it via websocket join payload if client provides it.
+        avatar_url = None
+        try:
+            # If client already sent an avatar_url in username/role fields, it won't exist here.
+            avatar_url = getattr(websocket, "avatar_url", None)
+        except Exception:
+            avatar_url = None
+
+        self.connections[user_id] = {
+            "ws": websocket,
+            "username": username,
+            "role": role,
+            "avatar_url": avatar_url or "",
+        }
         await self.broadcast({
-            "type": "presence", "action": "join",
-            "user_id": user_id, "username": username, "role": role,
-        })
+                "type": "presence", "action": "join",
+                "user_id": user_id, "username": username, "role": role,
+            })
         await self.send_online_list(websocket)
         # Send current voice room participants
         if self.voice_room:
             users = [
-                {"user_id": uid, "username": self.connections[uid]["username"]}
+                {
+                    "user_id": uid,
+                    "username": self.connections[uid]["username"],
+                    "avatar_url": self.connections[uid].get("avatar_url", ""),
+                }
                 for uid in self.voice_room if uid in self.connections
             ]
             await websocket.send_text(json.dumps({"type": "voice_users", "users": users}))
@@ -77,11 +96,19 @@ class ConnectionManager:
 
         if t == "chat":
             content = str(msg.get("content", ""))[:512]
+            # Always include avatar_url so the client can render the same PDP everywhere
+            avatar_url = ""
+            # If avatar_url is present in the connection info, reuse it
+            # (connections[user_id] currently stores: ws, username, role)
+            conn_info = self.connections.get(user_id) or {}
+            avatar_url = conn_info.get("avatar_url", "") or ""
+
             await self.broadcast({
                 "type": "chat",
                 "user_id": user_id, "username": username, "role": role,
                 "content": content,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
+                "avatar_url": avatar_url,
             })
 
         elif t == "ping":

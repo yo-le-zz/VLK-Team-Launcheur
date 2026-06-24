@@ -129,6 +129,13 @@ async def list_users(db: AsyncSession = Depends(get_db), _=Depends(get_current_a
     return [_user_dict(u) for u in r.scalars().all()]
 
 
+@router.get("/users/public")
+async def list_users_public(db: AsyncSession = Depends(get_db)):
+    """Public endpoint for all users to view rankings (read-only)."""
+    r = await db.execute(select(User).order_by(User.id))
+    return [_user_dict_public(u) for u in r.scalars().all()]
+
+
 class UserPatch(BaseModel):
     active:      Optional[bool] = None
     role:        Optional[str]  = None
@@ -364,6 +371,18 @@ def _user_dict(u: User) -> dict:
         "active":           u.active,
         "created_at":       str(u.created_at),
         "last_seen":        str(u.last_seen),
+    }
+
+
+def _user_dict_public(u: User) -> dict:
+    """Public user dict with limited information for normal users."""
+    return {
+        "id":               u.id,
+        "username":         u.username,
+        "rank":             u.rank,
+        "rank_points":      u.rank_points,
+        "avatar_url":       u.avatar_url,
+        "active":           u.active,
     }
 
 

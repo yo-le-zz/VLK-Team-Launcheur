@@ -68,31 +68,33 @@ def main():
     login_window = LoginWindow(api)
     login_window.setWindowTitle(f"{clan_name} — Launcher")
 
+    def _check_updates(main_window):
+        """Check for updates in a thread-safe manner."""
+        try:
+            updater = get_updater()
+            has_update, release_info = updater.check_for_updates()
+            if has_update and release_info:
+                # Show update dialog after main window is shown
+                QTimer.singleShot(1000, lambda: _show_update_dialog(release_info, main_window))
+        except Exception as e:
+            print(f"Update check failed: {e}")
+    
+    def _show_update_dialog(release_info, main_window):
+        """Show update dialog in main thread."""
+        from src.client.ui.dialogs.update_dialog import UpdateDialog
+        dialog = UpdateDialog(release_info, main_window)
+        dialog.show()
+
     def on_login(result: dict):
         splash.hide()
         login_window.hide()
         
-        # Check for updates in background
-        def check_updates():
-            try:
-                updater = get_updater()
-                has_update, release_info = updater.check_for_updates()
-                if has_update and release_info:
-                    # Show update dialog after main window is shown
-                    QTimer.singleShot(1000, lambda: show_update_dialog(release_info, main_window))
-            except Exception as e:
-                print(f"Update check failed: {e}")
-        
-        def show_update_dialog(release_info, main_window):
-            from src.client.ui.dialogs.update_dialog import UpdateDialog
-            dialog = UpdateDialog(release_info, main_window)
-            dialog.show()
-        
+        # Create main window
         main_window = MainWindow(api, clan_name=clan_name)
         main_window.show()
         
-        # Start update check after short delay - use timer for thread safety
-        QTimer.singleShot(2000, lambda: check_updates())
+        # Check for updates after main window is shown - use timer for thread safety
+        QTimer.singleShot(2000, lambda: _check_updates(main_window))
         
         login_window._main = main_window
 

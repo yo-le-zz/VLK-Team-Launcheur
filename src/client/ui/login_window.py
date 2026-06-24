@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QStackedWidget, QFrame, QSizePolicy, QMessageBox
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QPixmap, QFont, QColor, QPainter, QLinearGradient, QPen
 import os
 
@@ -82,19 +82,111 @@ class LoginWindow(QWidget):
         # Check if we have cached session
         if self.api.token and self.api.user:
             self._try_auto_login()
+        elif self.api._encryption_key:
+            # We have encrypted data but need password to decrypt (only once per run)
+            # If we already have a valid token/user in memory, don't reopen login.
+            if not (self.api.token and self.api.user):
+                if not getattr(self.api, "_password_unlocked", False):
+                    self._show_password_prompt()
 
     def _try_auto_login(self):
         """Try to auto-login with cached token."""
-        try:
-            # Verify token is still valid by calling /me endpoint
-            user_data = self.api.get_me()
-            if user_data:
-                self.login_success.emit({"token": self.api.token, "user": user_data})
-        except Exception:
-            # Token invalid, clear cache
-            self.api.token = None
-            self.api.user = None
-            self.api._clear_cached_session()
+        def attempt_login():
+            try:
+                # Verify token is still valid by calling /me endpoint
+                user_data = self.api.get_me()
+                if user_data:
+                    self.login_success.emit({"token": self.api.token, "user": user_data})
+            except Exception:
+                # Token invalid, clear cache
+                self.api.token = None
+                self.api.user = None
+                self.api._clear_cached_session()
+        
+        # Use QTimer to ensure this runs in main thread
+        QTimer.singleShot(0, attempt_login)
+
+    def _show_password_prompt(self):
+        """Show password prompt to decrypt cached session."""
+        def show_prompt():
+            from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QHBoxLayout
+            
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Session chiffrée détectée")
+            dialog.setFixedSize(400, 200)
+            dialog.setStyleSheet(f"""
+                QDialog {{ background: {BG_BASE}; }}
+                QLabel {{ color: {TEXT_PRIMARY}; }}
+                QLineEdit {{
+                    background: {BG_VOID};
+                    border: 1px solid {BG_BORDER};
+                    padding: 8px;
+                    color: {TEXT_PRIMARY};
+                }}
+                QPushButton {{
+                    background: {ACCENT_BLUE};
+                    color: white;
+                    padding: 10px;
+                    border: none;
+                }}
+                QPushButton:hover {{ background: {ACCENT_CYAN}; }}
+            """)
+            
+            layout = QVBoxLayout(dialog)
+            layout.setSpacing(15)
+            
+            label = QLabel("Entrez votre mot de passe pour déchiffrer votre session:")
+            label.setWordWrap(True)
+            layout.addWidget(label)
+            
+            password_input = QLineEdit()
+            password_input.setEchoMode(QLineEdit.EchoMode.Password)
+            layout.addWidget(password_input)
+            
+            btn_layout = QHBoxLayout()
+            ok_btn = QPushButton("Déverrouiller")
+            cancel_btn = QPushButton("Annuler")
+            btn_layout.addWidget(ok_btn)
+            btn_layout.addWidget(cancel_btn)
+            layout.addLayout(btn_layout)
+            
+            def on_ok():
+                password = password_input.text()
+                if password:
+                    ok_btn.setEnabled(False)
+                    ok_btn.setText("Verifying...")
+                    # Use async pattern to avoid blocking
+                    self._run_async(
+                        lambda: self.api.login("", password),
+                        lambda result: self._on_decrypt_success(result, dialog),
+                        lambda error: self._on_decrypt_error(error, dialog, ok_btn)
+                    )
+            
+            def on_cancel():
+                dialog.reject()
+                # Clear encrypted cache and show normal login
+                self.api._clear_cached_session()
+                self.api._encryption_key = None
+            
+            ok_btn.clicked.connect(on_ok)
+            cancel_btn.clicked.connect(on_cancel)
+            
+            dialog.exec()
+        
+        # Use QTimer to ensure this runs in main thread
+        QTimer.singleShot(0, show_prompt)
+
+    def _on_decrypt_success(self, result: dict, dialog):
+        """Handle successful decryption."""
+        dialog.accept()
+        self.login_success.emit(result)
+
+    def _on_decrypt_error(self, error: str, dialog, btn):
+        """Handle decryption error."""
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.warning(dialog, "Erreur", "Mot de passe incorrect")
+        btn.setEnabled(True)
+        btn.setText("Déverrouiller")
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -278,25 +370,34 @@ class LoginWindow(QWidget):
         self._run_async(lambda: self.api.register(lic, u, p, rb), self._on_auth_success,
                         lambda e: self._on_auth_error(e, self.reg_error, self.reg_btn, "CREATE ACCOUNT"))
 
+    def _on_auth_error(self, error: str, label: QLabel = None, btn: QPushButton = None, btn_text: str = None):
+        """Handle authentication errors with optional UI elements."""
+        if label:
+            label.setText(error)
+        if btn:
+            btn.setEnabled(True)
+        if btn_text:
+            btn.setText(btn_text)
+
     def _run_async(self, fn, on_success, on_error):
         """Run fn synchronously to avoid Qt threading issues."""
-        try:
-            result = fn()
-            on_success(result)
-        except Exception as e:
-            msg = str(e)
-            if "400" in msg:
-                msg = "Invalid credentials or license key."
-            elif "401" in msg:
-                msg = "Wrong username or password."
-            elif "403" in msg:
-                msg = "Account disabled."
-            on_error(msg)
+        def execute():
+            try:
+                result = fn()
+                # Capture result in closure
+                QTimer.singleShot(0, lambda r=result: on_success(r))
+            except Exception as e:
+                msg = str(e)
+                if "400" in msg:
+                    msg = "Invalid credentials or license key."
+                elif "401" in msg:
+                    msg = "Wrong username or password."
+                elif "403" in msg:
+                    msg = "Account disabled."
+                QTimer.singleShot(0, lambda m=msg: on_error(m))
+        
+        # Use QTimer.singleShot to schedule execution in main thread
+        QTimer.singleShot(0, execute)
 
     def _on_auth_success(self, result: dict):
         self.login_success.emit(result)
-
-    def _on_auth_error(self, error: str, label: QLabel, btn: QPushButton, btn_text: str):
-        label.setText(error)
-        btn.setEnabled(True)
-        btn.setText(btn_text)
