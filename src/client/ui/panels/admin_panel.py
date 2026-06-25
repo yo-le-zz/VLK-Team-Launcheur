@@ -1045,10 +1045,10 @@ class AdminPanel(QWidget):
     # ── API helper ────────────────────────────────────────────────────────────
 
     def _api(self, method: str, path: str, data: dict = None):
-        """Sync HTTP call with X-Master-Password header."""
+        """Sync HTTP call with JWT Bearer + X-Master-Password header."""
         headers = {
             "Content-Type": "application/json",
-            # Server expects header `x_master_password` (FastAPI lowercases header keys)
+            "Authorization": f"Bearer {self.api.token}",
             "x-master-password": self._master_pw,
         }
         url = f"{self.api.base_url}{path}"

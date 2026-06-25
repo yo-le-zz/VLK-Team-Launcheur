@@ -69,18 +69,15 @@ def main():
     login_window.setWindowTitle(f"{clan_name} — Launcher")
 
     def _check_updates(main_window):
-        """Check for updates in a thread-safe manner."""
         try:
             updater = get_updater()
             has_update, release_info = updater.check_for_updates()
             if has_update and release_info:
-                # Show update dialog after main window is shown
                 QTimer.singleShot(1000, lambda: _show_update_dialog(release_info, main_window))
         except Exception as e:
             print(f"Update check failed: {e}")
-    
+
     def _show_update_dialog(release_info, main_window):
-        """Show update dialog in main thread."""
         from src.client.ui.dialogs.update_dialog import UpdateDialog
         dialog = UpdateDialog(release_info, main_window)
         dialog.show()
@@ -88,19 +85,27 @@ def main():
     def on_login(result: dict):
         splash.hide()
         login_window.hide()
-        
-        # Create main window
         main_window = MainWindow(api, clan_name=clan_name)
         main_window.show()
-        
-        # Check for updates after main window is shown - use timer for thread safety
         QTimer.singleShot(2000, lambda: _check_updates(main_window))
-        
         login_window._main = main_window
 
+    def on_login_failed():
+        # L'auto-login a échoué : on révèle enfin le formulaire de connexion
+        splash.hide()
+        login_window.show()
+
     login_window.login_success.connect(on_login)
-    splash.finish(login_window)
-    login_window.show()
+    login_window.login_failed.connect(on_login_failed)
+
+    has_cached_session = bool(api.token and api.user)
+    if has_cached_session:
+        # Une session valide est en cache : on laisse le splash affiché pendant
+        # la vérification silencieuse, sans jamais montrer le formulaire login/register.
+        pass
+    else:
+        splash.finish(login_window)
+        login_window.show()
 
     sys.exit(app.exec())
 

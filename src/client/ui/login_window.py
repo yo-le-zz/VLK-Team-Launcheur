@@ -67,7 +67,8 @@ class InputField(QWidget):
 
 
 class LoginWindow(QWidget):
-    login_success = Signal(dict)  # emits api_client + user
+    login_success = Signal(dict)
+    login_failed = Signal()
 
     def __init__(self, api_client):
         super().__init__()
@@ -92,24 +93,26 @@ class LoginWindow(QWidget):
         # else: first launch / after logout -> normal login tabs stay visible
 
     def _try_auto_login(self):
-        """Try to auto-login with cached token, then launch straight into
-        the app (capturing the admin master password silently if needed)."""
+        """Try to auto-login with cached token."""
         def attempt_login():
             try:
                 user_data = self.api.get_me()
+
                 if user_data:
                     self.api.user = user_data
-                    self._maybe_capture_master_password(
-                        lambda: self.login_success.emit({"token": self.api.token, "user": user_data})
-                    )
+                    self.login_success.emit({
+                        "token": self.api.token,
+                        "user": user_data
+                    })
+                else:
+                    self.login_failed.emit()
+
             except Exception:
-                # Token invalid, clear cache and fall back to normal login
                 self.api.token = None
                 self.api.user = None
                 self.api._clear_cached_session()
-                self.show()
+                self.login_failed.emit()
 
-        # Use QTimer to ensure this runs in main thread
         QTimer.singleShot(0, attempt_login)
 
     def _show_password_prompt(self):

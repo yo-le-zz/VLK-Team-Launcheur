@@ -400,12 +400,11 @@ def _user_dict_public(u: User) -> dict:
     return {
         "id":               u.id,
         "username":         u.username,
-        "roblox_username":  u.roblox_username or "",
-        "rank":             u.rank or "Recruit",
-        "rank_points":      u.rank_points or 0,
-        "avatar_url":       u.avatar_url or "",
+        "role":             u.role,
+        "rank":             u.rank,
+        "rank_points":      u.rank_points,
+        "avatar_url":       u.avatar_url,
         "active":           u.active,
-        "role":             u.role or "user",
     }
 
 

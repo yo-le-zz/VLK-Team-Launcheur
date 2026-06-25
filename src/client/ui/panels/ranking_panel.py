@@ -162,11 +162,12 @@ class RankingPanel(QWidget):
         for u in users:
             row = self.table.rowCount()
             self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(str(u["id"])))
-            self.table.setItem(row, 1, QTableWidgetItem(u["username"]))
+            self.table.setItem(row, 0, QTableWidgetItem(str(u.get("id", ""))))
+            self.table.setItem(row, 1, QTableWidgetItem(u.get("username", "")))
 
-            role_item = QTableWidgetItem(u["role"].upper())
-            role_item.setForeground(QColor(ROLE_BADGE.get(u["role"], (TEXT_SECONDARY,""))[0]))
+            role = u.get("role", "user")
+            role_item = QTableWidgetItem(role.upper())
+            role_item.setForeground(QColor(ROLE_BADGE.get(role, (TEXT_SECONDARY,""))[0]))
             self.table.setItem(row, 2, role_item)
 
             rank_item = QTableWidgetItem(u.get("rank","Recruit"))
@@ -185,16 +186,12 @@ class RankingPanel(QWidget):
             promote_btn = QPushButton("PROMOTE")
             promote_btn.setFixedHeight(26)
             promote_btn.setStyleSheet(f"background: {BG_ELEVATED}; color: {STATUS_GREEN}; border: 1px solid #1A3A1A; border-radius: 4px; font-size: 10px; font-weight: 700; padding: 0 8px;")
-            promote_btn.clicked.connect(lambda _, uid=u["id"], urank=u.get("rank","Recruit"): self._promote(uid, urank))
+            promote_btn.clicked.connect(lambda _, uid=u.get("id"), urank=u.get("rank","Recruit"): self._promote(uid, urank))
 
             toggle_btn = QPushButton("DISABLE" if u.get("active") else "ENABLE")
             toggle_btn.setFixedHeight(26)
             toggle_btn.setStyleSheet(f"background: {BG_ELEVATED}; color: {STATUS_YELLOW}; border: 1px solid #3A2A00; border-radius: 4px; font-size: 10px; font-weight: 700; padding: 0 8px;")
-            toggle_btn.clicked.connect(lambda _, uid=u["id"], active=u.get("active"): self._toggle_active(uid, not active))
-
-            btn_layout.addWidget(promote_btn)
-            btn_layout.addWidget(toggle_btn)
-            self.table.setCellWidget(row, 5, btn_widget)
+            toggle_btn.clicked.connect(lambda _, uid=u.get("id"), active=u.get("active"): self._toggle_active(uid, not active))
 
         self.table.resizeRowsToContents()
         self.status_lbl.setText(f"{len(users)} users loaded")
