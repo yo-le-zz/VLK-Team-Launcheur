@@ -1,57 +1,74 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-VLK Launcher - PyInstaller Specification File
-Créé par yolezz pour VOLKZ Clan
+VLK Launcher — PyInstaller spec
+Bundles opus.dll (Windows) or libopus.dylib (macOS) automatically.
+Place the native Opus binary next to this spec file before building:
+  Windows : opus.dll         → https://opus-codec.org/downloads/
+  macOS   : libopus.dylib    → brew install opus
+              then copy from /opt/homebrew/lib/libopus.dylib (Apple Silicon)
+                        or  /usr/local/lib/libopus.dylib      (Intel)
 """
-
-import os
 import sys
-from pathlib import Path
-
-# Chemin du projet
-project_root = Path.cwd()
-src_path = project_root / "src"
-client_path = src_path / "client"
+import os
+import glob
 
 block_cipher = None
 
-# Données à inclure (icônes, assets)
-datas = [
-    (str(client_path / "assets"), "assets"),
-]
+# ── Locate Opus native binary ─────────────────────────────────────────────────
+def _find_opus():
+    """Return (src_path, dest_name) or None if not found."""
+    spec_dir = os.path.dirname(os.path.abspath(SPEC))  # noqa: F821
+    if sys.platform == "win32":
+        candidates = [
+            os.path.join(spec_dir, "opus.dll"),
+            # Common pip-installed locations
+            *glob.glob(r"C:\Windows\System32\opus.dll"),
+            *glob.glob(r"C:\Program Files\Opus\opus.dll"),
+        ]
+        name = "opus.dll"
+    elif sys.platform == "darwin":
+        candidates = [
+            os.path.join(spec_dir, "libopus.dylib"),
+            "/opt/homebrew/lib/libopus.dylib",    # Apple Silicon
+            "/usr/local/lib/libopus.dylib",        # Intel homebrew
+            "/opt/homebrew/lib/libopus.0.dylib",
+        ]
+        name = "libopus.dylib"
+    else:
+        candidates = [
+            os.path.join(spec_dir, "libopus.so.0"),
+            "/usr/lib/x86_64-linux-gnu/libopus.so.0",
+            "/usr/lib/libopus.so.0",
+        ]
+        name = "libopus.so.0"
 
-# Imports cachés (PySide6 et dépendances)
-hiddenimports = [
-    'PySide6.QtCore',
-    'PySide6.QtGui',
-    'PySide6.QtWidgets',
-    'PySide6.QtNetwork',
-    'websocket',
-    'websocket._abnf',
-    'requests',
-    'pyaudio',
-    'opuslib',
-]
+    for path in candidates:
+        if os.path.exists(path):
+            print(f"[spec] Found Opus library: {path}")
+            return (path, ".")   # copy to root of the bundle
+    print("[spec] WARNING: Opus library not found — voice chat won't work without it.")
+    return None
 
+opus_binary = _find_opus()
+extra_binaries = [opus_binary] if opus_binary else []
+
+# ── Analysis ──────────────────────────────────────────────────────────────────
 a = Analysis(
-    [str(src_path / "client" / "main.py")],
-    pathex=[str(project_root)],
-    binaries=[],
-    datas=datas,
-    hiddenimports=hiddenimports,
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[
-        'tkinter',
-        'matplotlib',
-        'numpy',
-        'pandas',
-        'scipy',
-        'PIL',
+    ['src/client/main.py'],
+    pathex=['.'],
+    binaries=extra_binaries,
+    datas=[
+        ('src/client/assets', 'src/client/assets'),
+        ('config.json', '.'),
     ],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
+    hiddenimports=[
+        'PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets', 'PySide6.QtNetwork',
+        'websocket', 'requests', 'pyaudio',
+        # opuslib is intentionally excluded — we use ctypes instead
+    ],
+    hookspath=[],
+    runtime_hooks=[],
+    excludes=['tkinter', 'matplotlib', 'numpy', 'scipy', 'opuslib'],
     cipher=block_cipher,
     noarchive=False,
 )
@@ -59,42 +76,22 @@ a = Analysis(
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
+    pyz, a.scripts, a.binaries, a.zipfiles, a.datas, [],
     name='VLKLauncher',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,  # Pas de console pour l'interface graphique
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=str(client_path / "assets" / "icon.ico") if os.path.exists(str(client_path / "assets" / "icon.ico")) else None,
+    debug=False, strip=False, upx=True, console=False,
+    icon='src/client/assets/icon.ico' if sys.platform == 'win32' else 'src/client/assets/icon.png',
 )
 
-# Pour macOS, créer un .app bundle
 if sys.platform == 'darwin':
     app = BUNDLE(
         exe,
-        name='VLKLauncher.app',
-        icon=str(client_path / "assets" / "icon.icns") if os.path.exists(str(client_path / "assets" / "icon.icns")) else None,
-        bundle_identifier='com.volkz.vlklauncher',
+        name='VLK Launcher.app',
+        icon='src/client/assets/icon.png',
+        bundle_identifier='com.volkz.launcher',
         info_plist={
-            'CFBundleName': 'VLK Launcher',
-            'CFBundleDisplayName': 'VLK Launcher',
             'CFBundleVersion': '1.0.0',
             'CFBundleShortVersionString': '1.0.0',
-            'CFBundleExecutable': 'VLKLauncher',
-            'NSHighResolutionCapable': 'True',
-            'LSUIElement': 'False',
-        }
+            'NSHighResolutionCapable': True,
+            'NSMicrophoneUsageDescription': 'VLK Launcher utilise le micro pour le chat vocal.',
+        },
     )

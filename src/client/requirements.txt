@@ -3,5 +3,9 @@ websocket-client>=1.7.0
 requests>=2.31.0
 PyInstaller>=6.0.0
 pyaudio>=0.2.14
-opuslib>=3.0.1
-cryptography>=41.0.0
+# opuslib is intentionally removed — VoiceEngine loads libopus via ctypes directly
+# This avoids the "Could not find Opus library" crash in PyInstaller bundles.
+# Install the native Opus binary separately:
+#   Windows : download opus.dll from https://opus-codec.org/downloads/
+#   macOS   : brew install opus
+#   Linux   : sudo apt install libopus0
