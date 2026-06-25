@@ -9,7 +9,7 @@ from PySide6.QtGui import QFont, QLinearGradient, QColor, QPainter, QBrush
 from src.client.ui.theme import *
 from src.client.ui.widgets import AnnouncementCard, StatusDot, SectionHeader
 
-ROBLOX_GAME_URL = "roblox://placeId=17017769292"   # Rivals place ID
+ROBLOX_GAME_URL = "roblox://placeId=17625359962"   # Rivals place ID
 
 
 class HeroBanner(QWidget):
