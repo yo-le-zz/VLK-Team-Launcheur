@@ -59,6 +59,10 @@ class VLKApiClient:
         self.token: Optional[str] = None
         self.user: Optional[dict] = None
 
+        # Server MASTER_PASSWORD, cached alongside the session so admin/superadmin
+        # accounts don't have to re-enter it every relaunch.
+        self.master_password: Optional[str] = None
+
         self._ws = None
         self._ws_thread: Optional[threading.Thread] = None
         self._ws_callbacks: dict[str, list[Callable]] = {}
@@ -69,6 +73,7 @@ class VLKApiClient:
         # Derived from user password (salt). If present, cache is encrypted and needs unlocking.
         self._encryption_key: Optional[str] = None
         self._password_unlocked: bool = False
+        self._last_login_password: Optional[str] = None
 
         self._main_thread_id = threading.get_ident()
         self._ws_dispatcher: Optional[WSSignalDispatcher] = None
@@ -88,17 +93,20 @@ class VLKApiClient:
                 self._encryption_key = data.get("encryption_key")
                 self.token = None
                 self.user = None
+                self.master_password = None
                 self._password_unlocked = False
             else:
-                # Legacy unencrypted format
+                # Legacy / unencrypted format
                 self.token = data.get("token")
                 self.user = data.get("user")
+                self.master_password = data.get("master_password")
                 self._password_unlocked = True
         except Exception as e:
             print(f"Error loading cached session: {e}")
 
     def _save_cached_session(self, password: Optional[str] = None):
-        """Save token and user data to file with optional encryption."""
+        """Save token, user data and (optionally) master password to file,
+        with optional password-based encryption."""
         try:
             if not (self.token and self.user):
                 return
@@ -113,12 +121,17 @@ class VLKApiClient:
                     "encryption_key": crypto.get_salt(),
                     "token": crypto.encrypt(self.token),
                     "user": crypto.encrypt(json.dumps(self.user)),
+                    "master_password": crypto.encrypt(self.master_password or ""),
                     "unlocked": True,
                 }
                 self._password_unlocked = True
             else:
                 # Unencrypted (not recommended)
-                data = {"token": self.token, "user": self.user}
+                data = {
+                    "token": self.token,
+                    "user": self.user,
+                    "master_password": self.master_password,
+                }
                 self._password_unlocked = True
 
             with open(self._cache_file, "w") as f:
@@ -141,11 +154,16 @@ class VLKApiClient:
             token = crypto.decrypt(data.get("token", ""))
             user_json = crypto.decrypt(data.get("user", ""))
             user = json.loads(user_json) if user_json else None
+            mpw = crypto.decrypt(data.get("master_password", "")) or None
 
             if token and user:
                 self.token = token
                 self.user = user
+                self.master_password = mpw
                 self._password_unlocked = True
+                # Remember the account password so we can re-save the cache
+                # later if a master password gets captured during this session.
+                self._last_login_password = password
                 return True
             return False
         except Exception:
@@ -161,8 +179,17 @@ class VLKApiClient:
 
         self.token = None
         self.user = None
+        self.master_password = None
         self._encryption_key = None
         self._password_unlocked = False
+        self._last_login_password = None
+
+    def set_master_password(self, master_password: str, login_password: Optional[str] = None):
+        """Cache the server MASTER_PASSWORD alongside the session so it
+        doesn't need to be re-entered on every relaunch."""
+        self.master_password = master_password
+        pw = login_password or self._last_login_password
+        self._save_cached_session(password=pw)
 
     def _headers(self) -> dict:
         h = {"Content-Type": "application/json"}
@@ -210,6 +237,7 @@ class VLKApiClient:
         )
         self.token = res["token"]
         self.user = res["user"]
+        self._last_login_password = password
         self._save_cached_session(password=password)
         return res
 
@@ -230,6 +258,7 @@ class VLKApiClient:
         res = self._post("/auth/login", {"username": username, "password": password})
         self.token = res["token"]
         self.user = res["user"]
+        self._last_login_password = password
         self._save_cached_session(password=password)
         return res
 
@@ -358,4 +387,3 @@ class VLKApiClient:
 
     def send_chat(self, content: str):
         self.send_ws({"type": "chat", "content": content})
-

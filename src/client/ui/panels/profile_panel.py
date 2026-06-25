@@ -178,6 +178,18 @@ class ProfilePanel(QWidget):
         btn.setText("SAVE CHANGES")
         self.status_lbl.setText("✓  Profile updated")
         self.status_lbl.setStyleSheet(f"color: {STATUS_GREEN}; font-size: 12px;")
+        
+        # Reload user data from server to get latest avatar_url
+        try:
+            updated_user = self.api.get_me()
+            # Update WebSocket connection with new avatar
+            if updated_user.get("avatar_url"):
+                self.api.send_ws({
+                    "type": "avatar_update",
+                    "avatar_url": updated_user.get("avatar_url", "")
+                })
+        except Exception as e:
+            print(f"Error reloading user data: {e}")
 
     def _on_error(self, btn, error):
         """Handle save error."""

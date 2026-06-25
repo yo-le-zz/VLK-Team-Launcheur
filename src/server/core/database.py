@@ -62,13 +62,28 @@ async def init_db():
 
         # Create default admin user
         result = await session.execute(select(User).where(User.username == settings.ADMIN_USERNAME))
-        if not result.scalar_one_or_none():
+        admin_user = result.scalar_one_or_none()
+        if not admin_user:
             session.add(User(
                 username=settings.ADMIN_USERNAME,
                 password_hash=hash_password(settings.ADMIN_PASSWORD),
                 license_key="VLK-ADMIN-0000",
                 role="superadmin",
-                active=True
+                active=True,
+                roblox_username="",
+                avatar_url="",
+                rank="Legend",
+                rank_points=1000
             ))
+        else:
+            # Update existing admin user with default values if they are empty
+            if not admin_user.rank or admin_user.rank == "":
+                admin_user.rank = "Legend"
+            if admin_user.rank_points is None or admin_user.rank_points == 0:
+                admin_user.rank_points = 1000
+            if not admin_user.roblox_username:
+                admin_user.roblox_username = ""
+            if not admin_user.avatar_url:
+                admin_user.avatar_url = ""
 
         await session.commit()

@@ -180,7 +180,12 @@ class VoiceUserCard(QWidget):
 
 
 class VoicePanel(QWidget):
-    """Full voice chat panel embedded in the sidebar/main window."""
+    """Full voice chat panel embedded in the sidebar/main window.
+
+    The profile picture (PDP) is managed in ONE place only: the Profil
+    panel. This panel just reads `api.user["avatar_url"]` — there is no
+    separate avatar picker here anymore.
+    """
 
     def __init__(self, api, parent=None):
         super().__init__(parent)
@@ -190,7 +195,6 @@ class VoicePanel(QWidget):
         self._in_voice = False
         self._local_muted = False
         self._deafened = False
-        self._local_avatar: QPixmap | None = None
 
         self._build_ui()
 
@@ -255,6 +259,7 @@ class VoicePanel(QWidget):
         self.join_btn = QPushButton("▶  REJOINDRE")
         self.join_btn.setObjectName("primary")
         self.join_btn.setFixedHeight(32)
+        self.join_btn.setMinimumWidth(120)
         self.join_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.join_btn.clicked.connect(self._toggle_voice)
 
@@ -264,23 +269,20 @@ class VoicePanel(QWidget):
         self.deaf_btn = self._ctrl_btn("🔊", "Son", STATUS_GREEN)
         self.deaf_btn.clicked.connect(self._toggle_deaf)
 
-        self.avatar_btn = self._ctrl_btn("🖼", "Avatar", TEXT_MUTED)
-        self.avatar_btn.clicked.connect(self._pick_avatar)
+        # NOTE: there is intentionally no avatar/PDP picker button here
+        # anymore. The profile picture is set once in the Profil panel
+        # and reused everywhere (voice cards + text chat) via
+        # api.user["avatar_url"].
 
-        # Ensure there is only one avatar button instance (avoid duplicates)
-        # by disabling any other similar button if UI got duplicated elsewhere.
-        # (No-op here; the main fix is server/client PDP unification)
-
-        btn_row.addWidget(self.join_btn)
+        btn_row.addWidget(self.join_btn, 1)
         btn_row.addWidget(self.mute_btn)
         btn_row.addWidget(self.deaf_btn)
-        btn_row.addWidget(self.avatar_btn)
         c_layout.addLayout(btn_row)
         root.addWidget(ctrl)
 
     def _ctrl_btn(self, emoji: str, tooltip: str, color: str) -> QPushButton:
         btn = QPushButton(emoji)
-        btn.setFixedSize(30, 30)
+        btn.setFixedSize(34, 32)
         btn.setToolTip(tooltip)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setStyleSheet(f"""
@@ -311,9 +313,6 @@ class VoicePanel(QWidget):
             self.api.send_ws(data)
 
         self._engine = VoiceEngine(_send, user["username"])
-        # Don't set callbacks directly - the VoicePanel will handle via signals
-        # self._engine.on_speaking_change = self._on_self_speaking
-        # self._engine.on_peer_speaking = self._on_peer_speaking
 
         ok, err = self._engine.start()
         if not ok:
@@ -340,7 +339,7 @@ class VoicePanel(QWidget):
         self.conn_dot.setText("● EN LIGNE")
         self.conn_dot.setStyleSheet(f"color: {STATUS_GREEN}; font-size: 10px; font-weight: 700;")
 
-        # Announce join via WS
+        # Announce join via WS — always send the Profil-managed avatar_url
         self.api.send_ws({"type": "voice_join", "username": user["username"], "user_id": str(user["id"]), "avatar_url": user.get("avatar_url", "")})
         self._add_user(str(user["id"]), user["username"], is_self=True, avatar_url=user.get("avatar_url", ""))
 
@@ -379,87 +378,68 @@ class VoicePanel(QWidget):
         emoji = "🔇" if self._deafened else "🔊"
         self.deaf_btn.setText(emoji)
 
-    def _pick_avatar(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Choisir une photo de profil", "", "Images (*.png *.jpg *.jpeg *.webp)")
-        if not path:
-            return
-        px = QPixmap(path)
-        if px.isNull():
-            return
-        self._local_avatar = px
-        uid = str(self.api.user["id"])
-        if uid in self._users:
-            self._users[uid].set_avatar_pixmap(px)
-        # Also update profile
-        self.api.send_ws({"type": "voice_avatar", "user_id": uid, "username": self.api.user["username"]})
-
     # ── User cards ─────────────────────────────────────────────────────────────
+
+    def _fetch_avatar_pixmap(self, avatar_url: str) -> QPixmap | None:
+        """Download (with on-disk cache) and return a QPixmap for a PDP url.
+        Works for both http(s) urls and base64 data: urls."""
+        if not avatar_url:
+            return None
+        try:
+            from PySide6.QtGui import QPixmap
+            if avatar_url.startswith("data:"):
+                import base64
+                header, b64data = avatar_url.split(",", 1)
+                raw = base64.b64decode(b64data)
+                px = QPixmap()
+                px.loadFromData(raw)
+                return px if not px.isNull() else None
+
+            import os, hashlib, requests
+            cache_dir = os.path.join(os.path.expanduser("~"), ".vlk_avatars")
+            os.makedirs(cache_dir, exist_ok=True)
+            url_hash = hashlib.md5(avatar_url.encode()).hexdigest()
+            cache_path = os.path.join(cache_dir, f"{url_hash}.png")
+
+            if os.path.exists(cache_path):
+                px = QPixmap(cache_path)
+                return px if not px.isNull() else None
+
+            r = requests.get(avatar_url, timeout=5)
+            if r.status_code == 200:
+                with open(cache_path, "wb") as f:
+                    f.write(r.content)
+                px = QPixmap(cache_path)
+                return px if not px.isNull() else None
+        except Exception:
+            pass
+        return None
 
     def _add_user(self, user_id: str, username: str, is_self: bool = False, avatar_url: str = ""):
         if user_id in self._users:
-            # Update avatar if we now have it
+            # Update avatar if we now have it (e.g. arrived later via voice_users)
             card = self._users[user_id]
-            if avatar_url and not is_self:
-                # Prefer remote avatar update when it arrives later
-                try:
-                    import os, hashlib, requests
-                    from PySide6.QtGui import QPixmap
-
-                    cache_dir = os.path.join(os.path.expanduser("~"), ".vlk_avatars")
-                    os.makedirs(cache_dir, exist_ok=True)
-                    url_hash = hashlib.md5(avatar_url.encode()).hexdigest()
-                    cache_path = os.path.join(cache_dir, f"{url_hash}.png")
-
-                    if os.path.exists(cache_path):
-                        px = QPixmap(cache_path)
-                        if not px.isNull():
-                            card.set_avatar_pixmap(px)
-                    else:
-                        r = requests.get(avatar_url, timeout=5)
-                        if r.status_code == 200:
-                            with open(cache_path, "wb") as f:
-                                f.write(r.content)
-                            px = QPixmap(cache_path)
-                            if not px.isNull():
-                                card.set_avatar_pixmap(px)
-                except Exception:
-                    pass
-            if is_self and self._local_avatar:
-                card.set_avatar_pixmap(self._local_avatar)
+            if avatar_url:
+                px = self._fetch_avatar_pixmap(avatar_url)
+                if px:
+                    card.set_avatar_pixmap(px)
+            elif is_self:
+                self_avatar = self.api.user.get("avatar_url", "")
+                px = self._fetch_avatar_pixmap(self_avatar)
+                if px:
+                    card.set_avatar_pixmap(px)
             return
 
         card = VoiceUserCard(user_id, username, is_self)
         card.mute_toggled.connect(self._on_mute_toggled)
 
-        # Avatar: prefer remote avatar_url when provided
-        if avatar_url and not is_self:
-            try:
-                import os, hashlib, requests
-                from PySide6.QtGui import QPixmap
-
-                avatar_size = AVATAR_SIZE
-                cache_dir = os.path.join(os.path.expanduser("~"), ".vlk_avatars")
-                os.makedirs(cache_dir, exist_ok=True)
-                url_hash = hashlib.md5(avatar_url.encode()).hexdigest()
-                cache_path = os.path.join(cache_dir, f"{url_hash}.png")
-
-                if os.path.exists(cache_path):
-                    px = QPixmap(cache_path)
-                    if not px.isNull():
-                        card.set_avatar_pixmap(px)
-                else:
-                    r = requests.get(avatar_url, timeout=5)
-                    if r.status_code == 200:
-                        with open(cache_path, "wb") as f:
-                            f.write(r.content)
-                        px = QPixmap(cache_path)
-                        if not px.isNull():
-                            card.set_avatar_pixmap(px)
-            except Exception:
-                pass
-
-        if is_self and self._local_avatar:
-            card.set_avatar_pixmap(self._local_avatar)
+        # Single source of truth for the avatar: passed-in avatar_url, or
+        # (for self) the Profil-managed api.user avatar_url.
+        effective_avatar = avatar_url or (self.api.user.get("avatar_url", "") if is_self else "")
+        if effective_avatar:
+            px = self._fetch_avatar_pixmap(effective_avatar)
+            if px:
+                card.set_avatar_pixmap(px)
 
         self.list_layout.insertWidget(self.list_layout.count() - 1, card)
         self._users[user_id] = card
@@ -486,9 +466,10 @@ class VoicePanel(QWidget):
         t = data.get("type")
         uid = data.get("user_id", "")
         uname = data.get("username", "")
+        avatar_url = data.get("avatar_url", "")
 
         if t == "voice_join":
-            QTimer.singleShot(0, lambda u=uid, n=uname: self._add_user(u, n))
+            QTimer.singleShot(0, lambda u=uid, n=uname, a=avatar_url: self._add_user(u, n, avatar_url=a))
         elif t == "voice_leave":
             QTimer.singleShot(0, lambda u=uid: self._remove_user(u))
         elif t == "voice_audio" and self._engine:

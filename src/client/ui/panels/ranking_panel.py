@@ -66,35 +66,61 @@ class RankingPanel(QWidget):
     def _fetch_users(self):
         user_role = self.api.user.get("role", "user")
         headers = {"Authorization": f"Bearer {self.api.token}"}
-        
+
         # Use public endpoint for normal users, admin endpoint for admins
         if user_role in ("admin", "superadmin"):
             # Server admin master check accepts: query param `password` OR header `x_master_password`
             # We'll send it as header using the exact expected casing.
-            headers["x-master-password"] = self._get_master_pw()
-            endpoint = "/admin/users"
+            mpw = self._get_master_pw()
+            if not mpw:
+                # No master password available (user skipped) -> fall back to
+                # the public roster instead of failing outright.
+                endpoint = "/admin/users/public"
+            else:
+                headers["x-master-password"] = mpw
+                endpoint = "/admin/users"
         else:
             endpoint = "/admin/users/public"
-        
+
         r = requests.get(
             f"{self.api.base_url}{endpoint}",
             headers=headers,
             timeout=10
         )
+        if r.status_code in (401, 403) and endpoint == "/admin/users":
+            # Cached master password turned out to be stale/invalid: clear it
+            # and fall back to the public roster rather than showing nothing.
+            self.api.master_password = None
+            if hasattr(self, "_master_pw"):
+                del self._master_pw
+            r = requests.get(
+                f"{self.api.base_url}/admin/users/public",
+                headers={"Authorization": f"Bearer {self.api.token}"},
+                timeout=10
+            )
         r.raise_for_status()
         return r.json()
 
     def _get_master_pw(self) -> str:
-        # Only prompt for master password if user is admin
+        # Only relevant for admin/superadmin accounts
         user_role = self.api.user.get("role", "user")
         if user_role not in ("admin", "superadmin"):
             return ""
-        
-        # For admin panel: prompt for master password once and cache
+
+        # Reuse the master password cached on the API client (entered once
+        # at login / in the admin panel) instead of asking again.
+        cached = getattr(self.api, "master_password", None)
+        if cached:
+            self._master_pw = cached
+            return cached
+
+        # For admin panel: prompt for master password once and cache it
         if not hasattr(self, "_master_pw"):
             from PySide6.QtWidgets import QInputDialog
             from PySide6.QtWidgets import QLineEdit
             pw, ok = QInputDialog.getText(self, "Admin Auth", "Master Password:", QLineEdit.EchoMode.Password, "")
+            if ok and pw:
+                self.api.set_master_password(pw)
             self._master_pw = pw if ok else ""
         return self._master_pw
 
@@ -102,14 +128,31 @@ class RankingPanel(QWidget):
         # Make sure current user is always visible (some endpoints may return partial lists)
         try:
             self_id = str(self.api.user.get("id"))
-            if self_id and not any(str(u.get("id")) == self_id for u in users):
+            user_found = False
+            for u in users:
+                if str(u.get("id")) == self_id:
+                    user_found = True
+                    # Update user data with latest from api.user
+                    u["username"] = self.api.user.get("username", u.get("username", ""))
+                    u["role"] = self.api.user.get("role", u.get("role", "user"))
+                    u["rank"] = self.api.user.get("rank", u.get("rank", "Recruit"))
+                    u["rank_points"] = self.api.user.get("rank_points", u.get("rank_points", 0))
+                    u["active"] = self.api.user.get("active", u.get("active", True))
+                    u["avatar_url"] = self.api.user.get("avatar_url", u.get("avatar_url", ""))
+                    u["roblox_username"] = self.api.user.get("roblox_username", u.get("roblox_username", ""))
+                    break
+            
+            if not user_found and self_id:
                 users = list(users)
                 users.append({
                     "id": int(self_id) if str(self_id).isdigit() else self_id,
                     "username": self.api.user.get("username"),
                     "role": self.api.user.get("role", "user"),
                     "rank": self.api.user.get("rank", "Recruit"),
+                    "rank_points": self.api.user.get("rank_points", 0),
                     "active": self.api.user.get("active", True),
+                    "avatar_url": self.api.user.get("avatar_url", ""),
+                    "roblox_username": self.api.user.get("roblox_username", ""),
                 })
         except Exception:
             pass
@@ -170,11 +213,12 @@ class RankingPanel(QWidget):
 
     def _patch_user(self, user_id: int, data: dict):
         try:
+            mpw = getattr(self.api, "master_password", None) or getattr(self, "_master_pw", "")
             r = requests.patch(
                 f"{self.api.base_url}/admin/users/{user_id}",
                 json=data,
                 headers={"Authorization": f"Bearer {self.api.token}",
-                         "x-master-password": self._master_pw if hasattr(self, "_master_pw") else ""},
+                         "x-master-password": mpw},
                 timeout=10
             )
             r.raise_for_status()

@@ -145,7 +145,9 @@ class HomePanel(QWidget):
         self._online_val.setText(str(count))
 
     def update_online_count(self, data: dict):
-        pass  # updated via online_list event
+        # Update online count from presence data
+        if isinstance(data, dict) and "online_count" in data:
+            self.set_online_count(data["online_count"])
 
     def show_announcement(self, ann: dict):
         """Show announcement - use QTimer for thread safety when called from WebSocket."""

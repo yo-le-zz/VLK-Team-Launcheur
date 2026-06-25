@@ -5,21 +5,11 @@ from typing import Dict, Set
 
 class ConnectionManager:
     def __init__(self):
-        self.connections: Dict[str, dict] = {}   # user_id -> {ws, username, role}
+        self.connections: Dict[str, dict] = {}   # user_id -> {ws, username, role, avatar_url}
         self.voice_room: Set[str] = set()        # user_ids currently in voice
 
-    async def connect(self, websocket: WebSocket, user_id: str, username: str, role: str):
+    async def connect(self, websocket: WebSocket, user_id: str, username: str, role: str, avatar_url: str = ""):
         await websocket.accept()
-        # Keep avatar_url in memory for WS relays (chat + voice)
-        # Avatar_url comes from the HTTP login payload (user.avatar_url) -> token claims are limited,
-        # so we also accept it via websocket join payload if client provides it.
-        avatar_url = None
-        try:
-            # If client already sent an avatar_url in username/role fields, it won't exist here.
-            avatar_url = getattr(websocket, "avatar_url", None)
-        except Exception:
-            avatar_url = None
-
         self.connections[user_id] = {
             "ws": websocket,
             "username": username,
@@ -96,10 +86,8 @@ class ConnectionManager:
 
         if t == "chat":
             content = str(msg.get("content", ""))[:512]
-            # Always include avatar_url so the client can render the same PDP everywhere
-            avatar_url = ""
-            # If avatar_url is present in the connection info, reuse it
-            # (connections[user_id] currently stores: ws, username, role)
+            # Always include avatar_url so the client can render the same PDP
+            # everywhere (text chat AND voice chat use this single value).
             conn_info = self.connections.get(user_id) or {}
             avatar_url = conn_info.get("avatar_url", "") or ""
 
@@ -123,11 +111,31 @@ class ConnectionManager:
                 "rank": msg.get("rank"), "by": username,
             })
 
+        elif t == "avatar_update":
+            # Update avatar_url in connection when user changes profile picture
+            new_avatar = msg.get("avatar_url", "")
+            if user_id in self.connections:
+                self.connections[user_id]["avatar_url"] = new_avatar
+            # Broadcast to all clients so they update their UI
+            await self.broadcast({
+                "type": "avatar_update",
+                "user_id": user_id,
+                "username": username,
+                "avatar_url": new_avatar,
+            })
+
         # ── Voice ──────────────────────────────────────────────────────────────
         elif t == "voice_join":
             self.voice_room.add(user_id)
+            conn_info = self.connections.get(user_id) or {}
+            avatar_url = msg.get("avatar_url") or conn_info.get("avatar_url", "") or ""
+            # Keep the connection's avatar_url in sync, in case the client
+            # sent a fresher one in the voice_join payload.
+            if avatar_url and user_id in self.connections:
+                self.connections[user_id]["avatar_url"] = avatar_url
             await self.broadcast({
                 "type": "voice_join", "user_id": user_id, "username": username,
+                "avatar_url": avatar_url,
             }, exclude=user_id)
 
         elif t == "voice_leave":

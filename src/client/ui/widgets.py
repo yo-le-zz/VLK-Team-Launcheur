@@ -148,15 +148,99 @@ class GradientLine(QFrame):
 
 
 class MemberCard(QWidget):
-    def __init__(self, member: dict, parent=None):
+    def __init__(self, member: dict, online: bool = True, parent=None):
         super().__init__(parent)
         self.setObjectName("card")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
 
-        self.dot = StatusDot(STATUS_GREEN, 8)
+        # Avatar
+        avatar_url = member.get("avatar_url", "")
+        avatar_size = 32
+        avatar_label = QLabel()
+        avatar_label.setFixedSize(avatar_size, avatar_size)
+        
+        if avatar_url:
+            try:
+                import os
+                import hashlib
+                from PySide6.QtGui import QPixmap
+                
+                pixmap = None
+                if avatar_url.startswith("data:"):
+                    import base64
+                    try:
+                        header_part, b64data = avatar_url.split(",", 1)
+                        raw = base64.b64decode(b64data)
+                        pixmap = QPixmap()
+                        if not pixmap.loadFromData(raw):
+                            pixmap = None
+                    except Exception:
+                        pixmap = None
+                else:
+                    # Create a cache path for avatars
+                    cache_dir = os.path.join(os.path.expanduser("~"), ".vlk_avatars")
+                    os.makedirs(cache_dir, exist_ok=True)
+
+                    # Generate cache filename from URL
+                    url_hash = hashlib.md5(avatar_url.encode()).hexdigest()
+                    cache_path = os.path.join(cache_dir, f"{url_hash}.png")
+
+                    if os.path.exists(cache_path):
+                        # Load from cache
+                        pixmap = QPixmap(cache_path)
+                        if pixmap.isNull():
+                            pixmap = None
+                    else:
+                        # Download and cache
+                        try:
+                            import requests
+                            response = requests.get(avatar_url, timeout=5)
+                            if response.status_code == 200:
+                                with open(cache_path, 'wb') as f:
+                                    f.write(response.content)
+                                pixmap = QPixmap(cache_path)
+                                if pixmap.isNull():
+                                    pixmap = None
+                        except Exception:
+                            pixmap = None
+
+                if pixmap is not None:
+                    scaled_pixmap = pixmap.scaled(avatar_size, avatar_size, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+                    avatar_label.setPixmap(scaled_pixmap)
+                    avatar_label.setStyleSheet(f"""
+                        border-radius: {avatar_size // 2}px;
+                        border: 2px solid {BG_BORDER};
+                    """)
+            except Exception:
+                pass
+        
+        # Show initials if no avatar
+        pix_loaded = False
+        try:
+            pix = avatar_label.pixmap()
+            if pix is not None and not pix.isNull():
+                pix_loaded = True
+        except Exception:
+            pix_loaded = False
+
+        if not pix_loaded:
+            username = member.get("username", "")
+            initials = username[:2].upper()
+            avatar_label.setText(initials)
+            avatar_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            avatar_label.setStyleSheet(f"""
+                background: {BG_ELEVATED};
+                color: {ACCENT_CYAN};
+                border-radius: {avatar_size // 2}px;
+                font-size: 12px;
+                font-weight: 800;
+            """)
+
+        self.dot = StatusDot(STATUS_GREEN if online else STATUS_GRAY, 8)
         name = QLabel(member.get("username", ""))
-        name.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {TEXT_PRIMARY};")
+        name_color = TEXT_PRIMARY if online else TEXT_MUTED
+        name.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {name_color};")
 
         role = member.get("role", "user")
         fg, bg = ROLE_BADGE.get(role, ("#8BA5C8", "#1A2233"))
@@ -167,10 +251,16 @@ class MemberCard(QWidget):
             padding: 2px 6px; border-radius: 4px;
         """)
 
-        layout.addWidget(self.dot)
+        layout.addWidget(avatar_label)
         layout.addSpacing(8)
+        layout.addWidget(self.dot)
+        layout.addSpacing(6)
         layout.addWidget(name)
         layout.addStretch()
+        if not online:
+            offline_lbl = QLabel("hors ligne")
+            offline_lbl.setStyleSheet(f"font-size: 10px; color: {TEXT_MUTED}; margin-right: 6px;")
+            layout.addWidget(offline_lbl)
         layout.addWidget(role_lbl)
 
 

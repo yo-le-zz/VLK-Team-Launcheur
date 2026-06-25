@@ -38,39 +38,51 @@ class ChatMessage(QWidget):
         avatar_label.setFixedSize(avatar_size, avatar_size)
         if avatar_url:
             try:
-                from PySide6.QtCore import QUrl
-                from PySide6.QtNetwork import QNetworkRequest, QNetworkAccessManager
                 import os
                 import hashlib
-                
-                # Create a cache path for avatars
-                cache_dir = os.path.join(os.path.expanduser("~"), ".vlk_avatars")
-                os.makedirs(cache_dir, exist_ok=True)
-                
-                # Generate cache filename from URL
-                url_hash = hashlib.md5(avatar_url.encode()).hexdigest()
-                cache_path = os.path.join(cache_dir, f"{url_hash}.png")
-                
-                if os.path.exists(cache_path):
-                    # Load from cache
-                    pixmap = QPixmap(cache_path)
-                    if not pixmap.isNull():
-                        scaled_pixmap = pixmap.scaled(avatar_size, avatar_size, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
-                        avatar_label.setPixmap(scaled_pixmap)
-                else:
-                    # Download and cache
+
+                pixmap = None
+                if avatar_url.startswith("data:"):
+                    import base64
                     try:
-                        import requests
-                        response = requests.get(avatar_url, timeout=5)
-                        if response.status_code == 200:
-                            with open(cache_path, 'wb') as f:
-                                f.write(response.content)
-                            pixmap = QPixmap(cache_path)
-                            if not pixmap.isNull():
-                                scaled_pixmap = pixmap.scaled(avatar_size, avatar_size, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
-                                avatar_label.setPixmap(scaled_pixmap)
+                        header_part, b64data = avatar_url.split(",", 1)
+                        raw = base64.b64decode(b64data)
+                        pixmap = QPixmap()
+                        if not pixmap.loadFromData(raw):
+                            pixmap = None
                     except Exception:
-                        pass
+                        pixmap = None
+                else:
+                    # Create a cache path for avatars
+                    cache_dir = os.path.join(os.path.expanduser("~"), ".vlk_avatars")
+                    os.makedirs(cache_dir, exist_ok=True)
+
+                    # Generate cache filename from URL
+                    url_hash = hashlib.md5(avatar_url.encode()).hexdigest()
+                    cache_path = os.path.join(cache_dir, f"{url_hash}.png")
+
+                    if os.path.exists(cache_path):
+                        # Load from cache
+                        pixmap = QPixmap(cache_path)
+                        if pixmap.isNull():
+                            pixmap = None
+                    else:
+                        # Download and cache
+                        try:
+                            import requests
+                            response = requests.get(avatar_url, timeout=5)
+                            if response.status_code == 200:
+                                with open(cache_path, 'wb') as f:
+                                    f.write(response.content)
+                                pixmap = QPixmap(cache_path)
+                                if pixmap.isNull():
+                                    pixmap = None
+                        except Exception:
+                            pixmap = None
+
+                if pixmap is not None:
+                    scaled_pixmap = pixmap.scaled(avatar_size, avatar_size, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+                    avatar_label.setPixmap(scaled_pixmap)
             except Exception:
                 pass
         
@@ -223,14 +235,17 @@ class ChatPanel(QWidget):
         text = self.input.text().strip()
         if not text:
             return
-        # Immediately show the message as sent
+        # Immediately show the message as sent, carrying our own Profil
+        # avatar_url so it never falls back to initials while waiting
+        # for the server echo.
         from datetime import datetime
         self.add_message({
             "user_id": str(self.api.user.get("id")),
             "username": self.api.user.get("username"),
             "role": self.api.user.get("role", "user"),
             "content": text,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "avatar_url": self.api.user.get("avatar_url", ""),
         })
         self.api.send_chat(text)
         self.input.clear()
@@ -239,10 +254,26 @@ class ChatPanel(QWidget):
         """Add message - use QTimer for thread safety when called from WebSocket."""
         QTimer.singleShot(0, lambda: self._do_add_message(data))
     
+    def on_avatar_update(self, data: dict):
+        """Handle avatar update broadcast."""
+        # Update existing messages with new avatar
+        user_id = data.get("user_id")
+        new_avatar = data.get("avatar_url", "")
+        if user_id and new_avatar:
+            # Refresh the chat UI to show new avatar
+            # This could be optimized to only update specific messages
+            pass
+    
     def _do_add_message(self, data: dict):
         """Actually add the message widget (called in main thread)."""
         is_self = data.get("user_id") == str(self.api.user.get("id")) or \
                   data.get("username") == self.api.user.get("username")
+        # If this is our own message and the server didn't include an
+        # avatar_url (e.g. older cached connection), fall back to our
+        # locally-known Profil avatar so the PDP is always consistent.
+        if is_self and not data.get("avatar_url"):
+            data = dict(data)
+            data["avatar_url"] = self.api.user.get("avatar_url", "")
         msg_widget = ChatMessage(data, is_self=is_self)
         self.msg_layout.addWidget(msg_widget)
         # Scroll to bottom with slight delay to ensure widget is rendered

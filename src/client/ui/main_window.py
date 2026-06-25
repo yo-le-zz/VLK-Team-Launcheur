@@ -78,9 +78,10 @@ class MainWindow(QMainWindow):
             self.stack.addWidget(p)
         content_layout.addWidget(self.stack)
 
-        # Voice panel (right column)
+        # Voice panel (right column) — widened from 220 to 260px so labels
+        # like "REJOINDRE" / "QUITTER" always render in full.
         self.voice_panel = VoicePanel(self.api)
-        self.voice_panel.setFixedWidth(220)
+        self.voice_panel.setFixedWidth(260)
         self.voice_panel.setStyleSheet(f"background: {BG_BASE}; border-left: 1px solid {BG_BORDER};")
 
         mid_layout.addWidget(content_frame)

@@ -1,6 +1,10 @@
 """VLK Launcher — Admin Panel
 Auth: MASTER_PASSWORD from .env (sent as X-Master-Password header).
 No JWT required — master password is the sole gate.
+
+This version reuses api.master_password (cached, encrypted, alongside the
+session) so admin/superadmin accounts don't have to re-enter the master
+password every time they open this panel or relaunch the app.
 """
 import requests as _requests
 from datetime import datetime
@@ -819,7 +823,7 @@ class AnnouncementsTab(QWidget):
         cl.setContentsMargins(16, 14, 16, 14)
         cl.setSpacing(10)
 
-        cl.addWidget(QLabel("Nouvelle annonce :").setStyleSheet if False else self._mlbl("Nouvelle annonce :"))
+        cl.addWidget(self._mlbl("Nouvelle annonce :"))
 
         self._ann_title = QLineEdit()
         self._ann_title.setPlaceholderText("Titre de l'annonce...")
@@ -1026,12 +1030,17 @@ class AdminPanel(QWidget):
     def __init__(self, api, parent=None):
         super().__init__(parent)
         self.api         = api
-        # Master password from login (so we don't ask again).
-        # It is set from LoginWindow when user authenticates.
-        self._master_pw  = getattr(api, "master_password", "")
+        # Reuse the master password cached on the API client (entered once
+        # at login or in this panel previously) so we don't ask again.
+        self._master_pw  = getattr(api, "master_password", "") or getattr(api, "master_password", "")
 
         self._authed     = False
         self._build_ui()
+
+        # If we already have a cached master password, authenticate
+        # silently (no button press, no dialog) as soon as the panel exists.
+        if self._master_pw:
+            QTimer.singleShot(0, self._silent_auth)
 
     # ── API helper ────────────────────────────────────────────────────────────
 
@@ -1046,6 +1055,24 @@ class AdminPanel(QWidget):
         r = getattr(_requests, method.lower())(url, json=data, headers=headers, timeout=10)
         r.raise_for_status()
         return r.json() if r.content else {}
+
+    def _silent_auth(self):
+        """Authenticate using the already-cached master password, with no
+        UI prompt at all. If it turns out to be stale/invalid, fall back
+        to the normal manual auth button instead of erroring out."""
+        def test():
+            return self._api("GET", "/admin/stats")
+
+        def ok(_):
+            QTimer.singleShot(0, self._do_auth_success)
+
+        def fail(e):
+            # Cached password is stale/invalid (server restarted with a new
+            # MASTER_PASSWORD, etc.) — clear it and require manual re-entry.
+            self._master_pw = ""
+            self.api.master_password = None
+
+        _run(self, test, ok, fail)
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -1160,6 +1187,9 @@ class AdminPanel(QWidget):
     def _do_auth_success(self):
         """Handle successful authentication (called in main thread)."""
         self._authed = True
+        # Persist the working master password so it survives relaunches
+        # and is shared with other panels (Ranking, etc.) via the API client.
+        self.api.set_master_password(self._master_pw)
         self._auth_lbl.setText("🟢  Authentifié")
         self._auth_lbl.setStyleSheet(f"font-size: 11px; color: {STATUS_GREEN}; font-weight: 700;")
         self._auth_btn.setText("🔒  Se déconnecter")
@@ -1191,6 +1221,7 @@ class AdminPanel(QWidget):
     def _do_logout(self):
         """Handle logout (called in main thread)."""
         self._master_pw = ""
+        self.api.master_password = None
         self._authed    = False
         self._auth_lbl.setText("🔒  Non authentifié")
         self._auth_lbl.setStyleSheet(f"font-size: 11px; color: {TEXT_MUTED};")
@@ -1225,6 +1256,10 @@ class AdminPanel(QWidget):
         if self._authed:
             self._load_all()
             self._tab_stats.start_timer()  # Start timer when tab is shown
+        elif self._master_pw and not self._authed:
+            # We have a cached password but haven't confirmed it yet
+            # (e.g. silent auth still in flight) — try again.
+            self._silent_auth()
     
     def on_hide(self):
         """Called when tab is hidden."""

@@ -43,6 +43,9 @@ async def health():
 @app.websocket("/ws/{token}")
 async def websocket_endpoint(websocket: WebSocket, token: str):
     from src.server.core.auth_utils import decode_token
+    from src.server.core.database import AsyncSessionLocal, User
+    from sqlalchemy import select
+
     payload = decode_token(token)
     if not payload:
         await websocket.close(code=4001)
@@ -50,7 +53,21 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
     user_id = payload.get("sub")
     username = payload.get("username")
     role = payload.get("role", "user")
-    await manager.connect(websocket, user_id, username, role)
+
+    # The JWT only carries sub/username/role — fetch the current avatar_url
+    # from the DB so the SAME profile picture is used for both voice chat
+    # and text chat, sourced from the single Profil-managed value.
+    avatar_url = ""
+    try:
+        async with AsyncSessionLocal() as session:
+            r = await session.execute(select(User).where(User.id == int(user_id)))
+            u = r.scalar_one_or_none()
+            if u:
+                avatar_url = u.avatar_url or ""
+    except Exception:
+        avatar_url = ""
+
+    await manager.connect(websocket, user_id, username, role, avatar_url)
     try:
         while True:
             data = await websocket.receive_text()

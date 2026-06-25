@@ -87,11 +87,19 @@ class VoiceEngine:
             return False, "opuslib not installed. Run: pip install opuslib"
 
         try:
-            # Suppress ALSA/Jack warnings by redirecting stderr
+            # Suppress ALSA/Jack warnings by redirecting stderr and setting environment variables
             import sys
             import io
+            import os
+            
+            # Set environment variables to suppress ALSA/Jack warnings
+            os.environ['ALSA_VERBOSE'] = '0'
+            os.environ['JACK_NO_START_SERVER'] = '1'
+            
             old_stderr = sys.stderr
+            old_stdout = sys.stdout
             sys.stderr = io.StringIO()
+            sys.stdout = io.StringIO()
             
             try:
                 self._pa = pyaudio.PyAudio()
@@ -154,8 +162,9 @@ class VoiceEngine:
                 self._playback_thread.start()
                 return True, ""
             finally:
-                # Restore stderr
+                # Restore stderr and stdout
                 sys.stderr = old_stderr
+                sys.stdout = old_stdout
                 
         except Exception as e:
             self.stop()

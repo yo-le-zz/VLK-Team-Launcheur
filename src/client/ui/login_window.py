@@ -79,41 +79,49 @@ class LoginWindow(QWidget):
             QWidget#loginRoot {{ background: {BG_VOID}; }}
         """)
         self._build_ui()
-        # Check if we have cached session
+
+        # Decide up-front what to show. We never want the login tabs visible
+        # at the same time as a password-unlock / master-password dialog —
+        # so the window stays hidden until we know which path we're on.
         if self.api.token and self.api.user:
+            self.hide()
             self._try_auto_login()
-        elif self.api._encryption_key:
-            # We have encrypted data but need password to decrypt (only once per run)
-            # If we already have a valid token/user in memory, don't reopen login.
-            if not (self.api.token and self.api.user):
-                if not getattr(self.api, "_password_unlocked", False):
-                    self._show_password_prompt()
+        elif self.api._encryption_key and not getattr(self.api, "_password_unlocked", False):
+            self.hide()
+            self._show_password_prompt()
+        # else: first launch / after logout -> normal login tabs stay visible
 
     def _try_auto_login(self):
-        """Try to auto-login with cached token."""
+        """Try to auto-login with cached token, then launch straight into
+        the app (capturing the admin master password silently if needed)."""
         def attempt_login():
             try:
-                # Verify token is still valid by calling /me endpoint
                 user_data = self.api.get_me()
                 if user_data:
-                    self.login_success.emit({"token": self.api.token, "user": user_data})
+                    self.api.user = user_data
+                    self._maybe_capture_master_password(
+                        lambda: self.login_success.emit({"token": self.api.token, "user": user_data})
+                    )
             except Exception:
-                # Token invalid, clear cache
+                # Token invalid, clear cache and fall back to normal login
                 self.api.token = None
                 self.api.user = None
                 self.api._clear_cached_session()
-        
+                self.show()
+
         # Use QTimer to ensure this runs in main thread
         QTimer.singleShot(0, attempt_login)
 
     def _show_password_prompt(self):
-        """Show password prompt to decrypt cached session."""
+        """Show password prompt to decrypt cached session. The login tabs
+        stay hidden behind this; cancelling reveals them as a fallback."""
         def show_prompt():
             from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QHBoxLayout
-            
+
             dialog = QDialog(self)
             dialog.setWindowTitle("Session chiffrée détectée")
             dialog.setFixedSize(400, 200)
+            dialog.setModal(True)
             dialog.setStyleSheet(f"""
                 QDialog {{ background: {BG_BASE}; }}
                 QLabel {{ color: {TEXT_PRIMARY}; }}
@@ -131,55 +139,57 @@ class LoginWindow(QWidget):
                 }}
                 QPushButton:hover {{ background: {ACCENT_CYAN}; }}
             """)
-            
+
             layout = QVBoxLayout(dialog)
             layout.setSpacing(15)
-            
-            label = QLabel("Entrez votre mot de passe pour déchiffrer votre session:")
+
+            label = QLabel("Entrez votre mot de passe pour déverrouiller votre session :")
             label.setWordWrap(True)
             layout.addWidget(label)
-            
+
             password_input = QLineEdit()
             password_input.setEchoMode(QLineEdit.EchoMode.Password)
             layout.addWidget(password_input)
-            
+
             btn_layout = QHBoxLayout()
             ok_btn = QPushButton("Déverrouiller")
             cancel_btn = QPushButton("Annuler")
             btn_layout.addWidget(ok_btn)
             btn_layout.addWidget(cancel_btn)
             layout.addLayout(btn_layout)
-            
+
             def on_ok():
                 password = password_input.text()
-                if password:
-                    ok_btn.setEnabled(False)
-                    ok_btn.setText("Verifying...")
-                    # Use async pattern to avoid blocking
-                    self._run_async(
-                        lambda: self.api.login("", password),
-                        lambda result: self._on_decrypt_success(result, dialog),
-                        lambda error: self._on_decrypt_error(error, dialog, ok_btn)
-                    )
-            
+                if not password:
+                    return
+                ok_btn.setEnabled(False)
+                ok_btn.setText("Vérification...")
+                self._run_async(
+                    lambda: self.api.login("", password),
+                    lambda result: self._on_decrypt_success(result, dialog),
+                    lambda error: self._on_decrypt_error(error, dialog, ok_btn)
+                )
+
             def on_cancel():
                 dialog.reject()
-                # Clear encrypted cache and show normal login
+                # Clear encrypted cache and show normal login as a fallback
                 self.api._clear_cached_session()
                 self.api._encryption_key = None
-            
+                self.show()
+
             ok_btn.clicked.connect(on_ok)
             cancel_btn.clicked.connect(on_cancel)
-            
+            password_input.returnPressed.connect(on_ok)
+
             dialog.exec()
-        
+
         # Use QTimer to ensure this runs in main thread
         QTimer.singleShot(0, show_prompt)
 
     def _on_decrypt_success(self, result: dict, dialog):
         """Handle successful decryption."""
         dialog.accept()
-        self.login_success.emit(result)
+        self._maybe_capture_master_password(lambda: self.login_success.emit(result))
 
     def _on_decrypt_error(self, error: str, dialog, btn):
         """Handle decryption error."""
@@ -187,6 +197,99 @@ class LoginWindow(QWidget):
         QMessageBox.warning(dialog, "Erreur", "Mot de passe incorrect")
         btn.setEnabled(True)
         btn.setText("Déverrouiller")
+
+    def _maybe_capture_master_password(self, proceed):
+        """If this is an admin/superadmin account and we don't already have
+        a cached server MASTER_PASSWORD, ask for it ONCE, verify it against
+        the server, cache it encrypted alongside the session, then proceed
+        straight into the launcher. On every later launch this is skipped
+        entirely since the password is already cached."""
+        role = (self.api.user or {}).get("role", "user")
+        if role not in ("admin", "superadmin") or self.api.master_password:
+            proceed()
+            return
+
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QHBoxLayout
+        import requests
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Master Password requis")
+        dialog.setFixedSize(380, 190)
+        dialog.setModal(True)
+        dialog.setStyleSheet(f"""
+            QDialog {{ background: {BG_BASE}; }}
+            QLabel {{ color: {TEXT_PRIMARY}; }}
+            QLineEdit {{
+                background: {BG_VOID}; border: 1px solid {BG_BORDER};
+                padding: 8px; color: {TEXT_PRIMARY};
+            }}
+            QPushButton {{ background: {ACCENT_BLUE}; color: white; padding: 10px; border: none; }}
+            QPushButton:hover {{ background: {ACCENT_CYAN}; }}
+        """)
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(12)
+
+        info = QLabel("Compte admin détecté.\nEntrez le mot de passe master (une seule fois) :")
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        pw_input = QLineEdit()
+        pw_input.setEchoMode(QLineEdit.EchoMode.Password)
+        layout.addWidget(pw_input)
+
+        err_lbl = QLabel("")
+        err_lbl.setStyleSheet(f"color: {STATUS_RED}; font-size: 11px;")
+        layout.addWidget(err_lbl)
+
+        row = QHBoxLayout()
+        ok_btn = QPushButton("Valider")
+        skip_btn = QPushButton("Plus tard")
+        skip_btn.setStyleSheet(f"background: {BG_ELEVATED}; color: {TEXT_SECONDARY};")
+        row.addWidget(ok_btn)
+        row.addWidget(skip_btn)
+        layout.addLayout(row)
+
+        def validate():
+            pw = pw_input.text()
+            if not pw:
+                return
+            ok_btn.setEnabled(False)
+            ok_btn.setText("Vérification...")
+            try:
+                r = requests.get(
+                    f"{self.api.base_url}/admin/stats",
+                    headers={"Authorization": f"Bearer {self.api.token}", "x-master-password": pw},
+                    timeout=10,
+                )
+                r.raise_for_status()
+                self.api.set_master_password(pw)
+                dialog.accept()
+                proceed()
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 401:
+                    err_lbl.setText("Mot de passe master incorrect ou droits admin insuffisants.")
+                elif e.response.status_code == 403:
+                    err_lbl.setText("Accès refusé : droits admin requis.")
+                else:
+                    err_lbl.setText("Mot de passe incorrect ou serveur inaccessible.")
+                pw_input.clear()
+                ok_btn.setEnabled(True)
+                ok_btn.setText("Valider")
+            except Exception as e:
+                err_lbl.setText(f"Erreur: {str(e)}")
+                pw_input.clear()
+                ok_btn.setEnabled(True)
+                ok_btn.setText("Valider")
+
+        def skip():
+            dialog.accept()
+            proceed()
+
+        ok_btn.clicked.connect(validate)
+        skip_btn.clicked.connect(skip)
+        pw_input.returnPressed.connect(validate)
+
+        dialog.exec()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -400,4 +503,7 @@ class LoginWindow(QWidget):
         QTimer.singleShot(0, execute)
 
     def _on_auth_success(self, result: dict):
-        self.login_success.emit(result)
+        # Make sure the window is visible before we possibly show the
+        # one-time master-password dialog (it parents itself on `self`).
+        self.show()
+        self._maybe_capture_master_password(lambda: self.login_success.emit(result))

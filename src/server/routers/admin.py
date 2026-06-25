@@ -101,7 +101,15 @@ async def admin_login(req: AdminLoginRequest, db: AsyncSession = Depends(get_db)
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
 @router.get("/stats")
-async def stats(db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)):
+async def stats(
+    db: AsyncSession = Depends(get_db),
+    payload: dict = Depends(get_current_admin),
+    x_master_password: str = Header(None)
+):
+    # Verify master password for additional security
+    if x_master_password != settings.MASTER_PASSWORD:
+        raise HTTPException(403, "Invalid master password")
+    
     total_users     = (await db.execute(select(func.count(User.id)))).scalar()
     active_users    = (await db.execute(select(func.count(User.id)).where(User.active == True))).scalar()
     total_licenses  = (await db.execute(select(func.count(License.id)))).scalar()
@@ -124,7 +132,15 @@ async def stats(db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)
 # ── Users ─────────────────────────────────────────────────────────────────────
 
 @router.get("/users")
-async def list_users(db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)):
+async def list_users(
+    db: AsyncSession = Depends(get_db),
+    payload: dict = Depends(get_current_admin),
+    x_master_password: str = Header(None)
+):
+    # Verify master password for additional security
+    if x_master_password != settings.MASTER_PASSWORD:
+        raise HTTPException(403, "Invalid master password")
+    
     r = await db.execute(select(User).order_by(User.id))
     return [_user_dict(u) for u in r.scalars().all()]
 
@@ -148,7 +164,12 @@ async def patch_user(
     user_id: int, req: UserPatch,
     db: AsyncSession = Depends(get_db),
     current_admin: dict = Depends(get_current_admin),
+    x_master_password: str = Header(None)
 ):
+    # Verify master password for additional security
+    if x_master_password != settings.MASTER_PASSWORD:
+        raise HTTPException(403, "Invalid master password")
+    
     r = await db.execute(select(User).where(User.id == user_id))
     user = r.scalar_one_or_none()
     if not user:
@@ -379,10 +400,12 @@ def _user_dict_public(u: User) -> dict:
     return {
         "id":               u.id,
         "username":         u.username,
-        "rank":             u.rank,
-        "rank_points":      u.rank_points,
-        "avatar_url":       u.avatar_url,
+        "roblox_username":  u.roblox_username or "",
+        "rank":             u.rank or "Recruit",
+        "rank_points":      u.rank_points or 0,
+        "avatar_url":       u.avatar_url or "",
         "active":           u.active,
+        "role":             u.role or "user",
     }
 
 
