@@ -3,7 +3,7 @@
 > Private esports SaaS launcher for the VOLKZ clan — Roblox Rivals.
 
 **Author:** yolezz  
-**Version:** 1.0.0  
+**Version:** 1.0.1
 **Platforms:** Windows + macOS
 
 ---
@@ -342,7 +342,7 @@ build_installer.bat
 - Python 3.11+
 - Inno Setup 6 (téléchargeable depuis https://jrsoftware.org/isdl.php)
 
-L'installateur sera généré dans `installer/windows/output/` sous le nom `VLKLauncher-Setup-1.0.0.exe`.
+L'installateur sera généré dans `installer/windows/output/` sous le nom `VLKLauncher-Setup-1.0.1.exe`.
 
 ### macOS
 
@@ -374,7 +374,7 @@ cd installer/macos
 - Python 3.11+
 - Xcode Command Line Tools (pour pkgbuild)
 
-Le package sera généré dans `installer/macos/output/` sous le nom `VLKLauncher-1.0.0.pkg`.
+Le package sera généré dans `installer/macos/output/` sous le nom `VLKLauncher-1.0.1.pkg`.
 
 ---
 
@@ -387,5 +387,5 @@ For any questions or issues, contact **yolezz**:
 
 ---
 
-**Version 1.0.0** — VOLKZ Clan © 2024
+**Version 1.0.1** — VOLKZ Clan © 2026
 **Créé par yolezz**

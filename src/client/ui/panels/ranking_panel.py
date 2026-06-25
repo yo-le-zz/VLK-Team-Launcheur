@@ -2,182 +2,201 @@
 import requests
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QFrame, QComboBox, QHeaderView, QMessageBox
+    QTableWidget, QTableWidgetItem, QFrame, QComboBox,
+    QHeaderView, QMessageBox, QLineEdit, QInputDialog,
+    QSizePolicy, QFileDialog
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QThread, QObject, Signal
+from PySide6.QtGui import QColor, QPixmap
 from src.client.ui.theme import *
 
 RANKS = ["Recruit", "Member", "Veteran", "Elite", "Officer", "Commander", "Legend"]
 ROLES = ["user", "admin", "superadmin"]
 
 
+class AdminWorker(QObject):
+    done = Signal(object)
+    error = Signal(str)
+
+    def __init__(self, fn):
+        super().__init__()
+        self._fn = fn
+
+    def run(self):
+        try:
+            self.done.emit(self._fn())
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class RankingPanel(QWidget):
     def __init__(self, api, parent=None):
         super().__init__(parent)
         self.api = api
-        self._users = []
+        self._users: list[dict] = []
+        self._master_pw: str = ""
         self._build_ui()
         self._load_users()
+
+    # ── UI ────────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
+        # Header row
         header = QHBoxLayout()
         title = QLabel("🏆  RANKINGS  &  USER MANAGEMENT")
         title.setObjectName("heading")
+
+        avatar_btn = QPushButton("🖼  MA PHOTO DE PROFIL")
+        avatar_btn.setObjectName("secondary")
+        avatar_btn.setFixedHeight(34)
+        avatar_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        avatar_btn.clicked.connect(self._pick_avatar)
+
         refresh_btn = QPushButton("↺  REFRESH")
         refresh_btn.setObjectName("secondary")
         refresh_btn.setFixedHeight(34)
         refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         refresh_btn.clicked.connect(self._load_users)
+
         header.addWidget(title)
         header.addStretch()
+        header.addWidget(avatar_btn)
+        header.addSpacing(6)
         header.addWidget(refresh_btn)
         layout.addLayout(header)
 
-        self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["ID", "USERNAME", "ROLE", "RANK", "ACTIVE", "ACTIONS"])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        # Legend
+        legend = QLabel(
+            f'<span style="color:{ACCENT_CYAN}; font-weight:700;">● Vous</span>'
+            f'  <span style="color:{STATUS_GREEN}">● Actif</span>'
+            f'  <span style="color:{STATUS_RED}">● Désactivé</span>'
+        )
+        legend.setStyleSheet("font-size: 11px; background: transparent;")
+        layout.addWidget(legend)
+
+        # Table
+        self.table = QTableWidget(0, 7)
+        self.table.setHorizontalHeaderLabels(
+            ["ID", "USERNAME", "ROLE", "RANK", "POINTS", "ACTIF", "ACTIONS"]
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.setAlternatingRowColors(True)
-        self.table.setStyleSheet(f"""
-            QTableWidget {{ alternate-background-color: {BG_ELEVATED}; }}
-        """)
+        self.table.setStyleSheet(
+            f"QTableWidget {{ alternate-background-color: {BG_ELEVATED}; }}"
+        )
         layout.addWidget(self.table)
 
         self.status_lbl = QLabel("")
         self.status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_lbl)
 
+    # ── Load users ────────────────────────────────────────────────────────────
+
     def _load_users(self):
-        self.status_lbl.setText("Loading...")
+        self.status_lbl.setText("Chargement...")
         self.status_lbl.setStyleSheet(f"color: {TEXT_MUTED};")
-        # Run synchronously to avoid threading issues
-        try:
-            users = self._fetch_users()
-            self._on_users(users)
-        except Exception as e:
-            self._on_error(str(e))
+        self._thread = QThread()
+        self._worker = AdminWorker(self._fetch_users)
+        self._worker.moveToThread(self._thread)
+        self._thread.started.connect(self._worker.run)
+        self._worker.done.connect(self._on_users)
+        self._worker.error.connect(self._on_error)
+        self._worker.done.connect(self._thread.quit)
+        self._worker.error.connect(self._thread.quit)
+        self._thread.start()
 
-    def _fetch_users(self):
-        user_role = self.api.user.get("role", "user")
-        headers = {"Authorization": f"Bearer {self.api.token}"}
-
-        # Use public endpoint for normal users, admin endpoint for admins
-        if user_role in ("admin", "superadmin"):
-            # Server admin master check accepts: query param `password` OR header `x_master_password`
-            # We'll send it as header using the exact expected casing.
-            mpw = self._get_master_pw()
-            if not mpw:
-                # No master password available (user skipped) -> fall back to
-                # the public roster instead of failing outright.
-                endpoint = "/admin/users/public"
-            else:
-                headers["x-master-password"] = mpw
-                endpoint = "/admin/users"
-        else:
-            endpoint = "/admin/users/public"
-
+    def _fetch_users(self) -> list:
         r = requests.get(
-            f"{self.api.base_url}{endpoint}",
-            headers=headers,
-            timeout=10
+            f"{self.api.base_url}/admin/users",
+            headers={
+                "Authorization": f"Bearer {self.api.token}",
+                "X-Master-Password": self._get_master_pw(),
+            },
+            timeout=10,
         )
-        if r.status_code in (401, 403) and endpoint == "/admin/users":
-            # Cached master password turned out to be stale/invalid: clear it
-            # and fall back to the public roster rather than showing nothing.
-            self.api.master_password = None
-            if hasattr(self, "_master_pw"):
-                del self._master_pw
-            r = requests.get(
-                f"{self.api.base_url}/admin/users/public",
-                headers={"Authorization": f"Bearer {self.api.token}"},
-                timeout=10
-            )
         r.raise_for_status()
         return r.json()
 
     def _get_master_pw(self) -> str:
-        # Only relevant for admin/superadmin accounts
-        user_role = self.api.user.get("role", "user")
-        if user_role not in ("admin", "superadmin"):
-            return ""
-
-        # Reuse the master password cached on the API client (entered once
-        # at login / in the admin panel) instead of asking again.
-        cached = getattr(self.api, "master_password", None)
-        if cached:
-            self._master_pw = cached
-            return cached
-
-        # For admin panel: prompt for master password once and cache it
-        if not hasattr(self, "_master_pw"):
-            from PySide6.QtWidgets import QInputDialog
-            from PySide6.QtWidgets import QLineEdit
-            pw, ok = QInputDialog.getText(self, "Admin Auth", "Master Password:", QLineEdit.EchoMode.Password, "")
-            if ok and pw:
-                self.api.set_master_password(pw)
+        if not self._master_pw:
+            pw, ok = QInputDialog.getText(
+                self,
+                "Authentification Admin",
+                "Mot de passe master :",
+                QLineEdit.EchoMode.Password,
+            )
             self._master_pw = pw if ok else ""
         return self._master_pw
 
-    def _on_users(self, users: list):
-        # Make sure current user is always visible (some endpoints may return partial lists)
-        try:
-            self_id = str(self.api.user.get("id"))
-            user_found = False
-            for u in users:
-                if str(u.get("id")) == self_id:
-                    user_found = True
-                    # Update user data with latest from api.user
-                    u["username"] = self.api.user.get("username", u.get("username", ""))
-                    u["role"] = self.api.user.get("role", u.get("role", "user"))
-                    u["rank"] = self.api.user.get("rank", u.get("rank", "Recruit"))
-                    u["rank_points"] = self.api.user.get("rank_points", u.get("rank_points", 0))
-                    u["active"] = self.api.user.get("active", u.get("active", True))
-                    u["avatar_url"] = self.api.user.get("avatar_url", u.get("avatar_url", ""))
-                    u["roblox_username"] = self.api.user.get("roblox_username", u.get("roblox_username", ""))
-                    break
-            
-            if not user_found and self_id:
-                users = list(users)
-                users.append({
-                    "id": int(self_id) if str(self_id).isdigit() else self_id,
-                    "username": self.api.user.get("username"),
-                    "role": self.api.user.get("role", "user"),
-                    "rank": self.api.user.get("rank", "Recruit"),
-                    "rank_points": self.api.user.get("rank_points", 0),
-                    "active": self.api.user.get("active", True),
-                    "avatar_url": self.api.user.get("avatar_url", ""),
-                    "roblox_username": self.api.user.get("roblox_username", ""),
-                })
-        except Exception:
-            pass
+    # ── Render table ──────────────────────────────────────────────────────────
 
+    def _on_users(self, users: list):
         self._users = users
+        me_id = str(self.api.user.get("id", ""))
+        me_username = self.api.user.get("username", "")
+
+        # Sort: current user first, then by rank_points desc
+        def _sort_key(u):
+            is_me = str(u["id"]) == me_id
+            return (0 if is_me else 1, -(u.get("rank_points") or 0))
+
+        users_sorted = sorted(users, key=_sort_key)
+
         self.table.setRowCount(0)
-        for u in users:
+        for u in users_sorted:
+            is_me = str(u["id"]) == me_id
             row = self.table.rowCount()
             self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(str(u.get("id", ""))))
-            self.table.setItem(row, 1, QTableWidgetItem(u.get("username", "")))
 
-            role = u.get("role", "user")
-            role_item = QTableWidgetItem(role.upper())
-            role_item.setForeground(QColor(ROLE_BADGE.get(role, (TEXT_SECONDARY,""))[0]))
-            self.table.setItem(row, 2, role_item)
+            # Row background highlight for current user
+            row_color = QColor("#0A1628") if is_me else None
 
-            rank_item = QTableWidgetItem(u.get("rank","Recruit"))
-            rank_item.setForeground(QColor(RANK_COLORS.get(u.get("rank","Recruit"), TEXT_SECONDARY)))
-            self.table.setItem(row, 3, rank_item)
+            def _item(text: str, color: str = None, bold: bool = False) -> QTableWidgetItem:
+                item = QTableWidgetItem(text)
+                if color:
+                    item.setForeground(QColor(color))
+                if bold:
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                if row_color and is_me:
+                    item.setBackground(row_color)
+                return item
 
-            active_item = QTableWidgetItem("✓" if u.get("active") else "✗")
-            active_item.setForeground(QColor(STATUS_GREEN if u.get("active") else STATUS_RED))
-            self.table.setItem(row, 4, active_item)
+            # ID
+            id_text = f"{'→ ' if is_me else ''}{u['id']}"
+            self.table.setItem(row, 0, _item(id_text, ACCENT_CYAN if is_me else None, is_me))
 
+            # Username (+ "VOUS" badge inline)
+            name_text = f"{u['username']}{'  ★' if is_me else ''}"
+            self.table.setItem(row, 1, _item(name_text, ACCENT_CYAN if is_me else TEXT_PRIMARY, is_me))
+
+            # Role
+            role_color = ROLE_BADGE.get(u["role"], (TEXT_SECONDARY, ""))[0]
+            self.table.setItem(row, 2, _item(u["role"].upper(), role_color))
+
+            # Rank
+            rank_color = RANK_COLORS.get(u.get("rank", "Recruit"), TEXT_SECONDARY)
+            self.table.setItem(row, 3, _item(u.get("rank", "Recruit"), rank_color))
+
+            # Points
+            self.table.setItem(row, 4, _item(str(u.get("rank_points", 0)), STATUS_YELLOW))
+
+            # Active
+            active = u.get("active", True)
+            active_item = _item("✓" if active else "✗", STATUS_GREEN if active else STATUS_RED)
+            self.table.setItem(row, 5, active_item)
+
+            # Actions
             btn_widget = QWidget()
             btn_layout = QHBoxLayout(btn_widget)
             btn_layout.setContentsMargins(4, 2, 4, 2)
@@ -185,41 +204,120 @@ class RankingPanel(QWidget):
 
             promote_btn = QPushButton("PROMOTE")
             promote_btn.setFixedHeight(26)
-            promote_btn.setStyleSheet(f"background: {BG_ELEVATED}; color: {STATUS_GREEN}; border: 1px solid #1A3A1A; border-radius: 4px; font-size: 10px; font-weight: 700; padding: 0 8px;")
-            promote_btn.clicked.connect(lambda _, uid=u.get("id"), urank=u.get("rank","Recruit"): self._promote(uid, urank))
+            promote_btn.setStyleSheet(
+                f"background: {BG_ELEVATED}; color: {STATUS_GREEN};"
+                f" border: 1px solid #1A3A1A; border-radius: 4px;"
+                f" font-size: 10px; font-weight: 700; padding: 0 8px;"
+            )
+            promote_btn.clicked.connect(
+                lambda _, uid=u["id"], urank=u.get("rank", "Recruit"): self._promote(uid, urank)
+            )
 
-            toggle_btn = QPushButton("DISABLE" if u.get("active") else "ENABLE")
+            demote_btn = QPushButton("DEMOTE")
+            demote_btn.setFixedHeight(26)
+            demote_btn.setStyleSheet(
+                f"background: {BG_ELEVATED}; color: {STATUS_RED};"
+                f" border: 1px solid #3A0015; border-radius: 4px;"
+                f" font-size: 10px; font-weight: 700; padding: 0 8px;"
+            )
+            demote_btn.clicked.connect(
+                lambda _, uid=u["id"], urank=u.get("rank", "Recruit"): self._demote(uid, urank)
+            )
+
+            toggle_btn = QPushButton("DÉSACTIVER" if active else "ACTIVER")
             toggle_btn.setFixedHeight(26)
-            toggle_btn.setStyleSheet(f"background: {BG_ELEVATED}; color: {STATUS_YELLOW}; border: 1px solid #3A2A00; border-radius: 4px; font-size: 10px; font-weight: 700; padding: 0 8px;")
-            toggle_btn.clicked.connect(lambda _, uid=u.get("id"), active=u.get("active"): self._toggle_active(uid, not active))
+            toggle_btn.setStyleSheet(
+                f"background: {BG_ELEVATED}; color: {STATUS_YELLOW};"
+                f" border: 1px solid #3A2A00; border-radius: 4px;"
+                f" font-size: 10px; font-weight: 700; padding: 0 8px;"
+            )
+            toggle_btn.clicked.connect(
+                lambda _, uid=u["id"], cur=active: self._toggle_active(uid, not cur)
+            )
+
+            btn_layout.addWidget(promote_btn)
+            btn_layout.addWidget(demote_btn)
+            btn_layout.addWidget(toggle_btn)
+            self.table.setCellWidget(row, 6, btn_widget)
 
         self.table.resizeRowsToContents()
-        self.status_lbl.setText(f"{len(users)} users loaded")
+        self.status_lbl.setText(f"{len(users)} utilisateurs — vous êtes surligné en bleu")
         self.status_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
 
-    def _on_error(self, error: str):
-        self.status_lbl.setText(f"Error: {error}")
+    def _on_error(self, msg: str):
+        self._master_pw = ""  # Reset password so user can re-enter
+        self.status_lbl.setText(f"Erreur : {msg}")
+        self.status_lbl.setStyleSheet(f"color: {STATUS_RED};")
+
+    # ── Actions ───────────────────────────────────────────────────────────────
 
     def _promote(self, user_id: int, current_rank: str):
         idx = RANKS.index(current_rank) if current_rank in RANKS else 0
         next_rank = RANKS[min(idx + 1, len(RANKS) - 1)]
         self._patch_user(user_id, {"rank": next_rank})
 
+    def _demote(self, user_id: int, current_rank: str):
+        idx = RANKS.index(current_rank) if current_rank in RANKS else 0
+        prev_rank = RANKS[max(idx - 1, 0)]
+        self._patch_user(user_id, {"rank": prev_rank})
+
     def _toggle_active(self, user_id: int, active: bool):
         self._patch_user(user_id, {"active": active})
 
     def _patch_user(self, user_id: int, data: dict):
         try:
-            mpw = getattr(self.api, "master_password", None) or getattr(self, "_master_pw", "")
             r = requests.patch(
                 f"{self.api.base_url}/admin/users/{user_id}",
                 json=data,
-                headers={"Authorization": f"Bearer {self.api.token}",
-                         "x-master-password": mpw},
-                timeout=10
+                headers={
+                    "Authorization": f"Bearer {self.api.token}",
+                    "X-Master-Password": self._master_pw,
+                },
+                timeout=10,
             )
             r.raise_for_status()
             self._load_users()
         except Exception as e:
-            self.status_lbl.setText(f"Error: {e}")
+            self.status_lbl.setText(f"Erreur : {e}")
+            self.status_lbl.setStyleSheet(f"color: {STATUS_RED};")
+
+    # ── Profile picture ───────────────────────────────────────────────────────
+
+    def _pick_avatar(self):
+        """
+        Let the user pick a local image and upload it as a profile picture.
+        Works on Windows and macOS because we use a plain file URL.
+        """
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choisir une photo de profil",
+            "",
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp)",
+        )
+        if not path:
+            return
+
+        # Validate image loads
+        px = QPixmap(path)
+        if px.isNull():
+            QMessageBox.warning(self, "Erreur", "Impossible de charger cette image.")
+            return
+
+        # Build a file:// URL for the avatar_url field (stored in profile)
+        import pathlib
+        file_url = pathlib.Path(path).as_uri()
+
+        try:
+            r = requests.patch(
+                f"{self.api.base_url}/auth/profile",
+                json={"avatar_url": file_url},
+                headers={"Authorization": f"Bearer {self.api.token}"},
+                timeout=10,
+            )
+            r.raise_for_status()
+            self.api.user["avatar_url"] = file_url
+            self.status_lbl.setText("✓  Photo de profil mise à jour")
+            self.status_lbl.setStyleSheet(f"color: {STATUS_GREEN}; font-size: 12px;")
+        except Exception as e:
+            self.status_lbl.setText(f"Erreur upload : {e}")
             self.status_lbl.setStyleSheet(f"color: {STATUS_RED};")

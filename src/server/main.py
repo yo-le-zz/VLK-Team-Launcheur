@@ -1,4 +1,4 @@
-"""VLK Launcher — FastAPI Server v1.0.0"""
+"""VLK Launcher — FastAPI Server v1.0.1"""
 import os
 import json
 import asyncio
@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     yield
 
-app = FastAPI(title="VLK Launcher API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="VLK Launcher API", version="1.0.1", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,7 +38,7 @@ security = HTTPBearer()
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "VLK Launcher API", "version": "1.0.0"}
+    return {"status": "ok", "service": "VLK Launcher API", "version": "1.0.1"}
 
 @app.websocket("/ws/{token}")
 async def websocket_endpoint(websocket: WebSocket, token: str):

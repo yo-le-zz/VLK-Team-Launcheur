@@ -10,11 +10,11 @@ Ce workflow construit automatiquement les installateurs VLK Launcher pour Window
 Le workflow extrait automatiquement la version depuis:
 1. Le message du commit (pattern: `X.Y.Z`)
 2. Fallback: pyproject.toml
-3. Fallback: `1.0.0` (version par défaut)
+3. Fallback: `1.0.1` (version par défaut)
 
 **Exemple de commit:**
 ```bash
-git commit -m "1.0.0 compile : project macos et windows + installateur macos et windows"
+git commit -m "1.0.1 compile : project macos et windows + installateur macos et windows"
 ```
 
 ### 2. Build Windows
@@ -57,8 +57,8 @@ Les installateurs embarquent tous les fichiers compilés et fonctionnent **sans 
 
 ```
 release-assets/
-├── VLKLauncher-Setup-1.0.0.exe           # Installateur Windows (recommandé)
-├── VLKLauncher-1.0.0.pkg                 # Package macOS (recommandé)
+├── VLKLauncher-Setup-1.0.1.exe           # Installateur Windows (recommandé)
+├── VLKLauncher-1.0.1.pkg                 # Package macOS (recommandé)
 ├── VLKLauncher-windows-standalone.zip    # Exécutable Windows seul
 └── VLKLauncher-macos-standalone.zip      # Application macOS seule
 ```

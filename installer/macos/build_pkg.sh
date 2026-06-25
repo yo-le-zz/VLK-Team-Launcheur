@@ -5,7 +5,7 @@
 set -e
 
 # Récupérer la version depuis le premier argument ou utiliser celle par défaut
-VERSION=${1:-"1.0.0"}
+VERSION=${1:-"1.0.1"}
 
 # Définir le répertoire racine du projet
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -125,7 +125,7 @@ cat > "license.txt" << 'EOF'
 VLK LAUNCHER - CONTRAT DE LICENCE D'UTILISATION
 
 VOLKZ Clan - Créé par yolezz
-Version 1.0.0
+Version 1.0.1
 
 IMPORTANT: VEUILLEZ LIRE ATTENTIVEMENT CE CONTRAT AVANT D'UTILISER CE LOGICIEL.
 
@@ -251,5 +251,5 @@ echo
 echo "========================================"
 echo "[SUCCÈS] Package créé avec succès!"
 echo "========================================"
-echo "Fichier: output/VLKLauncher-1.0.0.pkg"
+echo "Fichier: output/VLKLauncher-1.0.1.pkg"
 echo

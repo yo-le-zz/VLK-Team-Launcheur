@@ -9,7 +9,7 @@ echo.
 
 REM Récupérer la version depuis le premier argument ou utiliser celle par défaut
 set VERSION=%1
-if "%VERSION%"=="" set VERSION=1.0.0
+if "%VERSION%"=="" set VERSION=1.0.1
 
 REM Définir le répertoire racine du projet
 set "SCRIPT_DIR=%~dp0"

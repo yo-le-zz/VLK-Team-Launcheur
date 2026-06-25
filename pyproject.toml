@@ -1,6 +1,6 @@
 [project]
 name = "vlk-launcher"
-version = "1.0.0"
+version = "1.0.1"
 description = "VOLKZ Clan — Rivals Esports Launcher"
 authors = [{name = "yolezz"}]
 requires-python = ">=3.11"

@@ -5,7 +5,7 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet adhère à [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2024-06-23
+## [1.0.0] - 2026-06-23
 
 ### Ajouté
 - Application desktop client avec interface PySide6 moderne
@@ -24,6 +24,18 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Scripts utilitaires (lancement, génération de licences)
 - Documentation complète (README, STRUCTURE, scripts, installateurs)
 - Système de mise à jour intégré
+
+## [1.0.1] - 2026-06-25
+
+### fixed
+- Chargement lent sur windows et macOS 
+- Impossible de se co au voice chat sur windows et MacOS
+- Je ne me vois pas moi meme dans les rankings
+- Ameliorer les annonces styles embdems
+- PDP ne marche pas sur windows et MacOS
+- Un fichier config.json sur le client avec les trucs par default si on trouve pas le repo github / config sur github et l'id du jeux rivals
+- Le panneau de login classic et register s'affiche toujours au lancement alors que le launcheur se lance avec le cache ne pas l'afficher si utilisation du cache
+
 
 ### Installateurs
 - Windows: Installateur .exe avec désinstallation et réparation

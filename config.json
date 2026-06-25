@@ -1,9 +1,11 @@
 {
-  "server_url": "https://existing-microwave-subsection-any.trycloudflare.com",
+  "server_url": "https://mailed-verse-harvey-corners.trycloudflare.com",
   "clan_name": "VOLKZ CLAN",
   "clan_tag": "VLK",
   "game": "Rivals",
-  "version": "1.0.0",
+  "game_place_id": "17625359962",
+  "roblox_url": "roblox://placeId=17625359962",
+  "version": "1.0.1",
   "voice_enabled": true,
   "voice_sample_rate": 48000,
   "voice_channels": 1,

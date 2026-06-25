@@ -3,6 +3,8 @@
   "clan_name": "VOLKZ CLAN",
   "clan_tag": "VLK",
   "game": "Rivals",
+  "game_place_id": "17625359962",
+  "roblox_url": "roblox://placeId=17625359962",
   "version": "1.0.1",
   "voice_enabled": true,
   "voice_sample_rate": 48000,

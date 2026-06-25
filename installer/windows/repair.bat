@@ -44,7 +44,7 @@ if exist "%TEMP%\VLKLauncher_backup" (
 REM Réenregistrer les entrées de registre
 echo [INFO] Réenregistrement des entrées de registre...
 reg add "HKLM\Software\VOLKZ Clan\VLKLauncher" /v "InstallPath" /t REG_SZ /d "%PROGRAMFILES%\VLKLauncher" /f >nul 2>&1
-reg add "HKLM\Software\VOLKZ Clan\VLKLauncher" /v "Version" /t REG_SZ /d "1.0.0" /f >nul 2>&1
+reg add "HKLM\Software\VOLKZ Clan\VLKLauncher" /v "Version" /t REG_SZ /d "1.0.1" /f >nul 2>&1
 
 REM Recréer les raccourcis s'ils manquent
 echo [INFO] Vérification des raccourcis...

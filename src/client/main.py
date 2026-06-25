@@ -1,6 +1,7 @@
 """VLK Launcher — Entry Point v2"""
 import sys
 import os
+import json
 import threading
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,8 +15,63 @@ from src.client.ui.theme import QSS, BG_VOID, ACCENT_CYAN, TEXT_MUTED
 from src.client.ui.login_window import LoginWindow
 from src.client.ui.main_window import MainWindow
 from src.client.core.api import VLKApiClient
-from src.client.core.updater import get_updater
 
+# ── Session cache ─────────────────────────────────────────────────────────────
+if getattr(sys, "frozen", False):
+    _CACHE_DIR = os.path.dirname(sys.executable)
+else:
+    _CACHE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+SESSION_FILE = os.path.join(_CACHE_DIR, ".vlk_session.json")
+
+
+def _save_session(token: str, user: dict) -> None:
+    try:
+        with open(SESSION_FILE, "w", encoding="utf-8") as f:
+            json.dump({"token": token, "user": user}, f)
+    except Exception:
+        pass
+
+
+def _load_session() -> dict | None:
+    try:
+        if os.path.exists(SESSION_FILE):
+            with open(SESSION_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
+
+
+def _clear_session() -> None:
+    try:
+        if os.path.exists(SESSION_FILE):
+            os.remove(SESSION_FILE)
+    except Exception:
+        pass
+
+
+def _try_restore_session(api: VLKApiClient) -> bool:
+    """Try to restore a cached session. Returns True if successful."""
+    data = _load_session()
+    if not data or not data.get("token"):
+        return False
+    api.token = data["token"]
+    api.user = data["user"]
+    try:
+        # Validate token is still accepted by the server
+        api.get_me()
+        print("[Session] Restored from cache.")
+        return True
+    except Exception:
+        print("[Session] Cached token expired or invalid — showing login.")
+        api.token = None
+        api.user = None
+        _clear_session()
+        return False
+
+
+# ── Splash ────────────────────────────────────────────────────────────────────
 
 def make_splash(app) -> QSplashScreen:
     px = QPixmap(400, 220)
@@ -33,10 +89,12 @@ def make_splash(app) -> QSplashScreen:
     return splash
 
 
+# ── Entry point ───────────────────────────────────────────────────────────────
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("VLK Launcher")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion("1.0.1")
     app.setOrganizationName("VOLKZ Clan")
     app.setStyleSheet(QSS)
 
@@ -47,14 +105,11 @@ def main():
     splash = make_splash(app)
     app.processEvents()
 
-    # Load remote config synchronously to avoid threading issues
-    try:
-        config_loader.load_config(timeout=5.0)
-    except Exception as e:
-        print(f"Config load error: {e}")
+    # Load config — instant if cache exists, otherwise fetches GitHub
+    config_loader.load_config(timeout=4.0)
 
     server_url = config_loader.get_server_url()
-    clan_name  = config_loader.get_clan_name()
+    clan_name = config_loader.get_clan_name()
 
     if config_loader.is_maintenance():
         msg = config_loader.get("maintenance_message", "Maintenance en cours.")
@@ -65,45 +120,30 @@ def main():
 
     api = VLKApiClient(server_url)
 
-    login_window = LoginWindow(api)
-    login_window.setWindowTitle(f"{clan_name} — Launcher")
+    # ── Try auto-login from session cache ─────────────────────────────────────
+    session_ok = _try_restore_session(api)
 
-    def _check_updates(main_window):
-        try:
-            updater = get_updater()
-            has_update, release_info = updater.check_for_updates()
-            if has_update and release_info:
-                QTimer.singleShot(1000, lambda: _show_update_dialog(release_info, main_window))
-        except Exception as e:
-            print(f"Update check failed: {e}")
-
-    def _show_update_dialog(release_info, main_window):
-        from src.client.ui.dialogs.update_dialog import UpdateDialog
-        dialog = UpdateDialog(release_info, main_window)
-        dialog.show()
-
-    def on_login(result: dict):
+    if session_ok:
+        # Skip login screen entirely
         splash.hide()
-        login_window.hide()
         main_window = MainWindow(api, clan_name=clan_name)
         main_window.show()
-        QTimer.singleShot(2000, lambda: _check_updates(main_window))
-        login_window._main = main_window
-
-    def on_login_failed():
-        # L'auto-login a échoué : on révèle enfin le formulaire de connexion
-        splash.hide()
-        login_window.show()
-
-    login_window.login_success.connect(on_login)
-    login_window.login_failed.connect(on_login_failed)
-
-    has_cached_session = bool(api.token and api.user)
-    if has_cached_session:
-        # Une session valide est en cache : on laisse le splash affiché pendant
-        # la vérification silencieuse, sans jamais montrer le formulaire login/register.
-        pass
+        # Re-save refreshed user data
+        _save_session(api.token, api.user)
     else:
+        # Show normal login screen
+        login_window = LoginWindow(api)
+        login_window.setWindowTitle(f"{clan_name} — Launcher")
+
+        def on_login(result: dict):
+            _save_session(api.token, api.user)
+            splash.hide()
+            login_window.hide()
+            mw = MainWindow(api, clan_name=clan_name)
+            mw.show()
+            login_window._main = mw
+
+        login_window.login_success.connect(on_login)
         splash.finish(login_window)
         login_window.show()
 

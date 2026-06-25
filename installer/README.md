@@ -25,14 +25,14 @@ installer/
 1. Télécharger et installer Inno Setup 6 depuis https://jrsoftware.org/isdl.php
 2. Ouvrir une invite de commande dans `installer/windows/`
 3. Exécuter `build_installer.bat`
-4. L'installateur sera créé dans `output/VLKLauncher-Setup-1.0.0.exe`
+4. L'installateur sera créé dans `output/VLKLauncher-Setup-1.0.1.exe`
 
 ### macOS
 
 1. S'assurer que Xcode Command Line Tools sont installés (`xcode-select --install`)
 2. Ouvrir un terminal dans `installer/macos/`
 3. Exécuter `./build_pkg.sh`
-4. Le package sera créé dans `output/VLKLauncher-1.0.0.pkg`
+4. Le package sera créé dans `output/VLKLauncher-1.0.1.pkg`
 
 ## Contact
 

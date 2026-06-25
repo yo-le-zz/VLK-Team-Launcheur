@@ -2,7 +2,7 @@
 ; Créé par yolezz pour VOLKZ Clan
 
 #define AppName "VLK Launcher"
-#define AppVersion "1.0.0"
+#define AppVersion "1.0.1"
 #define AppPublisher "VOLKZ Clan"
 #define AppExeName "VLKLauncher.exe"
 #define AppAssocName "VLK Launcher"

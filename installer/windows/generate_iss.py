@@ -20,7 +20,7 @@ def extract_version():
         pass
     
     # Fallback: version par défaut
-    return "1.0.0"
+    return "1.0.1"
 
 def generate_iss():
     """Génère le fichier .iss avec la version extraite"""
